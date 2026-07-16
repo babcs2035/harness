@@ -22,6 +22,12 @@ interface Machine {
   id: number;
   name: string;
 }
+interface Pattern {
+  id: number;
+  description: string;
+  count: number;
+  status: string;
+}
 
 function DiffView({ diff }: { diff: string }) {
   const lines = diff.split('\n');
@@ -54,6 +60,7 @@ function DiffView({ diff }: { diff: string }) {
 export default function ProposalsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [selMachine, setSelMachine] = useState<number | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<number, string | undefined>>({});
@@ -62,6 +69,9 @@ export default function ProposalsPage() {
     api<{ proposals: Proposal[] }>('/api/proposals?status=pending')
       .then((d) => setProposals(d.proposals))
       .catch((e) => setMsg(`エラー: ${e.message ?? e}`));
+    api<{ patterns: Pattern[] }>('/api/patterns')
+      .then((d) => setPatterns(d.patterns))
+      .catch(() => setPatterns([]));
   }
   useEffect(() => {
     reload();
@@ -127,13 +137,41 @@ export default function ProposalsPage() {
         <button className="secondary" onClick={() => analyze('digest-fold')}>
           digest-fold 実行
         </button>
-        <button onClick={() => analyze('claude-md-improve')}>グローバル CLAUDE.md 改善案を生成</button>
+        <button onClick={() => analyze('claude-md-improve')}>CLAUDE.md 改善案</button>
+        <button onClick={() => analyze('skill-gen')}>skill 生成</button>
+        <button onClick={() => analyze('refactor-scope')}>スコープ再編</button>
         <button className="secondary" onClick={reload}>
           再読込
         </button>
       </div>
 
       {msg && <div className="panel" style={{ marginBottom: 16 }}>{msg}</div>}
+
+      {patterns.length > 0 && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <h3>繰り返しパターン候補（digest-fold 由来・改善の種）</h3>
+          <table>
+            <thead>
+              <tr>
+                <th className="num">出現</th>
+                <th>説明</th>
+                <th>状態</th>
+              </tr>
+            </thead>
+            <tbody>
+              {patterns.slice(0, 15).map((p) => (
+                <tr key={p.id}>
+                  <td className="num">{p.count}</td>
+                  <td>{p.description}</td>
+                  <td>
+                    <span className="badge">{p.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {proposals.length === 0 && <div className="panel muted">保留中の提案はありません。</div>}
 

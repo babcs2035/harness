@@ -36,6 +36,10 @@ export async function runAnalyze(payload: AnalyzePayload): Promise<string> {
         return await digestFold(payload, jobDir, inputDir, outputDir);
       case 'claude-md-improve':
         return await claudeMdImprove(payload, jobDir, inputDir, outputDir);
+      case 'skill-gen':
+        return await skillGen(payload, jobDir, inputDir, outputDir);
+      case 'refactor-scope':
+        return await refactorScope(payload, jobDir, inputDir, outputDir);
       default:
         throw new Error(`未対応の analyze kind: ${payload.kind}`);
     }
@@ -149,4 +153,156 @@ async function claudeMdImprove(
     )
     .run(payload.machine_id, targetPath, snap?.hash ?? '', newContent, diff, rationale, payload.job_id ?? null);
   return `claude-md-improve: 提案#${Number(r.lastInsertRowid)} を作成（cost=$${res.costUsd ?? 0}）`;
+}
+
+/** ディレクトリ以下のファイルを {abs, rel} で再帰列挙。 */
+function walkFiles(root: string): { abs: string; rel: string }[] {
+  const acc: { abs: string; rel: string }[] = [];
+  const walk = (dir: string, prefix: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const name of fs.readdirSync(dir)) {
+      const abs = path.join(dir, name);
+      const rel = prefix ? `${prefix}/${name}` : name;
+      if (fs.statSync(abs).isDirectory()) walk(abs, rel);
+      else acc.push({ abs, rel });
+    }
+  };
+  walk(root, '');
+  return acc;
+}
+
+/** 対象マシンの ~/.claude ディレクトリを、グローバル CLAUDE.md スナップショットのパスから導出。 */
+function claudeDirOf(machineId: number): string | null {
+  const db = getDb();
+  const snap = db
+    .prepare(
+      "SELECT path FROM snapshots WHERE machine_id=? AND kind='claude_md' AND is_current=1 AND path LIKE '%/.claude/CLAUDE.md' ORDER BY id DESC LIMIT 1",
+    )
+    .get(machineId) as { path: string } | undefined;
+  return snap ? path.dirname(snap.path) : null;
+}
+
+async function skillGen(
+  payload: AnalyzePayload,
+  jobDir: string,
+  inputDir: string,
+  outputDir: string,
+): Promise<string> {
+  const db = getDb();
+  if (!payload.machine_id) throw new Error('skill-gen: machine_id が必要です');
+  const claudeDir = claudeDirOf(payload.machine_id);
+  if (!claudeDir) throw new Error('skill-gen: ~/.claude を特定できません（先に収集してください）');
+
+  fs.writeFileSync(
+    path.join(inputDir, 'digest.json'),
+    JSON.stringify(loadDigest('global', payload.machine_id) ?? {}, null, 2),
+  );
+  const memDir = ensureDir(path.join(inputDir, 'memory'));
+  const mems = db
+    .prepare("SELECT path, content FROM snapshots WHERE machine_id=? AND kind='memory' AND is_current=1")
+    .all(payload.machine_id) as { path: string; content: string }[];
+  mems.forEach((m, i) => fs.writeFileSync(path.join(memDir, `mem_${i}_${path.basename(m.path)}`), m.content ?? ''));
+
+  const latestInc = db
+    .prepare('SELECT file_path FROM tier1_increments WHERE machine_id=? ORDER BY id DESC LIMIT 1')
+    .get(payload.machine_id) as { file_path: string } | undefined;
+  let materials: unknown = { sessions: [] };
+  if (latestInc && fs.existsSync(latestInc.file_path)) {
+    try {
+      const inc = JSON.parse(fs.readFileSync(latestInc.file_path, 'utf8'));
+      materials = { sessions: inc.sessions ?? [] };
+    } catch {
+      /* ignore */
+    }
+  }
+  fs.writeFileSync(path.join(inputDir, 'materials.json'), JSON.stringify(materials));
+
+  const res = await runClaude(template('skill-gen'), { cwd: jobDir, maxTurns: 40 });
+  if (!res.ok) throw new Error(`skill-gen 失敗: ${res.error}`);
+
+  const skillsOut = path.join(outputDir, 'skills');
+  const files = walkFiles(skillsOut).map((f) => ({
+    rel_path: f.rel,
+    content: fs.readFileSync(f.abs, 'utf8'),
+  }));
+  if (files.length === 0) return 'skill-gen: 生成された skill はありませんでした';
+
+  const rationaleFile = path.join(outputDir, 'rationale.md');
+  const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
+  const targetPath = path.join(claudeDir, 'skills');
+  const diff = files.map((f) => `+ ${f.rel_path} (${f.content.length} bytes)`).join('\n');
+
+  const r = db
+    .prepare(
+      `INSERT INTO proposals(type, machine_id, target_path, base_hash, new_content, diff, rationale, status, job_id, created_at)
+       VALUES('skill', ?, ?, '', ?, ?, ?, 'pending', ?, datetime('now'))`,
+    )
+    .run(payload.machine_id, targetPath, JSON.stringify({ files }), diff, rationale, payload.job_id ?? null);
+  return `skill-gen: 提案#${Number(r.lastInsertRowid)}（${files.length} ファイル, cost=$${res.costUsd ?? 0}）`;
+}
+
+async function refactorScope(
+  payload: AnalyzePayload,
+  jobDir: string,
+  inputDir: string,
+  outputDir: string,
+): Promise<string> {
+  const db = getDb();
+  if (!payload.machine_id) throw new Error('refactor-scope: machine_id が必要です');
+
+  const globalSnap = db
+    .prepare(
+      "SELECT path, hash, content FROM snapshots WHERE machine_id=? AND kind='claude_md' AND is_current=1 AND path LIKE '%/.claude/CLAUDE.md' ORDER BY id DESC LIMIT 1",
+    )
+    .get(payload.machine_id) as { path: string; hash: string; content: string } | undefined;
+  fs.writeFileSync(path.join(inputDir, 'global_claude_md.md'), globalSnap?.content ?? '');
+
+  const projDir = ensureDir(path.join(inputDir, 'projects'));
+  const projects = db
+    .prepare('SELECT id, cwd FROM projects WHERE machine_id=?')
+    .all(payload.machine_id) as { id: number; cwd: string }[];
+  const index: Record<string, { cwd?: string; target_path: string; hash?: string }> = {};
+  if (globalSnap) index.global = { target_path: globalSnap.path, hash: globalSnap.hash };
+
+  const projSnap = db.prepare(
+    "SELECT hash, content FROM snapshots WHERE machine_id=? AND kind='claude_md' AND is_current=1 AND path=?",
+  );
+  for (const p of projects) {
+    const targetPath = `${p.cwd}/CLAUDE.md`;
+    const snap = projSnap.get(payload.machine_id, targetPath) as { hash: string; content: string } | undefined;
+    if (!snap) continue;
+    fs.writeFileSync(path.join(projDir, `${p.id}__${path.basename(p.cwd)}.md`), snap.content ?? '');
+    index[String(p.id)] = { cwd: p.cwd, target_path: targetPath, hash: snap.hash };
+  }
+  fs.writeFileSync(path.join(inputDir, 'index.json'), JSON.stringify(index, null, 2));
+
+  if (Object.keys(index).length === 0) throw new Error('refactor-scope: 対象の CLAUDE.md がありません');
+
+  const res = await runClaude(template('refactor-scope'), { cwd: jobDir, maxTurns: 40 });
+  if (!res.ok) throw new Error(`refactor-scope 失敗: ${res.error}`);
+
+  const rationaleFile = path.join(outputDir, 'rationale.md');
+  const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
+  const filesDir = path.join(outputDir, 'files');
+  const outFiles = walkFiles(filesDir);
+  if (outFiles.length === 0) return 'refactor-scope: 変更提案なし';
+
+  let created = 0;
+  for (const f of outFiles) {
+    const target = f.rel.replace(/\.md$/, ''); // 'global' or '<project-id>'
+    const meta = index[target];
+    if (!meta) continue;
+    const newContent = fs.readFileSync(f.abs, 'utf8');
+    const cur = db
+      .prepare("SELECT content, hash FROM snapshots WHERE machine_id=? AND path=? AND is_current=1")
+      .get(payload.machine_id, meta.target_path) as { content: string; hash: string } | undefined;
+    if (cur && cur.content.trim() === newContent.trim()) continue;
+    const diff = unifiedDiff(cur?.content ?? '', newContent, path.basename(meta.target_path));
+    db.prepare(
+      `INSERT INTO proposals(type, machine_id, target_path, base_hash, new_content, diff, rationale, status, job_id, created_at)
+       VALUES('refactor', ?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'))`,
+    ).run(payload.machine_id, meta.target_path, meta.hash ?? '', newContent, diff, rationale, payload.job_id ?? null);
+    created++;
+  }
+  return `refactor-scope: ${created} 件の提案を作成（cost=$${res.costUsd ?? 0}）`;
 }

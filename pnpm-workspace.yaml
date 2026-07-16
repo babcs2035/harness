@@ -1,0 +1,10 @@
+packages:
+  - shared
+  - web
+  - worker
+
+# ネイティブ addon / ビルドスクリプトの実行を明示許可（pnpm 11 は既定で無視するため）
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  sharp: true

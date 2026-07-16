@@ -1,0 +1,42 @@
+# harness Hub。既存 nginx（ホスト側）が /harness/ を 127.0.0.1:3000 へプロキシする。
+# 事前に data/ をコンテナ実行ユーザー(uid 1000 = node)が書き込めるようにしておくこと:
+#   mkdir -p data/{digests,increments,jobs,claude-config} && sudo chown -R 1000:1000 data
+services:
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    # ループバックのみに publish。外部到達は nginx 経由のみ（直アクセス不可）
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    volumes:
+      - ./data:/data
+    environment:
+      - DB_PATH=/data/harness.db
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/harness/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - web
+    volumes:
+      - ./data:/data
+      - ./prompts:/prompts:ro
+      - ./agent:/agent:ro
+      - ${HARNESS_SSH_KEY:-./secrets/ssh_key}:/secrets/ssh_key:ro
+    environment:
+      - DB_PATH=/data/harness.db
+      - CLAUDE_CONFIG_DIR=/data/claude-config
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - HARNESS_SSH_KEY=/secrets/ssh_key
+      - PROMPTS_DIR=/prompts
+      - AGENT_DIR=/agent
+      - JOBS_DIR=/data/jobs

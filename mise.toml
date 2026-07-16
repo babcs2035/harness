@@ -1,0 +1,37 @@
+# harness 開発ツールチェーンの固定（開発機・Hub・CI で共通）
+[tools]
+node = "24"
+pnpm = "11"
+python = "3.12"
+
+[env]
+# ローカル開発時のデフォルト。本番は .env / docker-compose 側で上書きする。
+DB_PATH = "{{config_root}}/data/harness.db"
+CLAUDE_CONFIG_DIR = "{{config_root}}/data/claude-config"
+
+[tasks.setup]
+description = "依存インストール（pnpm）"
+run = "pnpm install"
+
+[tasks.dev]
+description = "web(Next.js) をローカル起動"
+dir = "{{config_root}}/web"
+run = "pnpm dev"
+
+[tasks.build]
+description = "全パッケージをビルド"
+run = "pnpm -r build"
+
+[tasks."db:init"]
+description = "SQLite にスキーマを適用（idempotent）"
+run = "pnpm --filter @harness/shared exec tsx src/init-db.ts"
+
+[tasks.worker]
+description = "worker（ジョブランナー）をローカル起動"
+dir = "{{config_root}}/worker"
+run = "pnpm dev"
+
+[tasks.enqueue]
+description = "ジョブ手動投入。例: mise run enqueue -- daily"
+dir = "{{config_root}}/worker"
+run = "pnpm exec tsx src/enqueue.ts"

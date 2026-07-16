@@ -4,6 +4,7 @@ import { getDb } from '@harness/shared';
 import { runCollect } from './jobs/collect.js';
 import { runAnalyze } from './jobs/analyze.js';
 import { runApply, runRollback } from './jobs/apply.js';
+import { runCleanup } from './jobs/cleanup.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
 
@@ -37,6 +38,8 @@ async function dispatch(job: JobRow): Promise<string> {
       return runApply(payload);
     case 'rollback':
       return runRollback(payload);
+    case 'cleanup':
+      return runCleanup();
     default:
       throw new Error(`未対応のジョブ種別: ${job.type}`);
   }

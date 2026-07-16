@@ -14,10 +14,11 @@ import {
 } from '../lib/tier.js';
 
 export interface AnalyzePayload {
-  kind: string; // 'digest-fold' | 'claude-md-improve' | ...
+  kind: string; // 'digest-fold' | 'claude-md-improve' | 'skill-gen' | 'refactor-scope' | 'drift-resolve'
   scope: 'global' | 'machine' | 'project';
   machine_id?: number;
   project_id?: number;
+  key?: string; // drift-resolve: 対象の論理キー（'.claude/CLAUDE.md' 等）
   job_id?: number; // 呼び出し元 jobs.id（提案に紐付ける）
 }
 
@@ -40,6 +41,8 @@ export async function runAnalyze(payload: AnalyzePayload): Promise<string> {
         return await skillGen(payload, jobDir, inputDir, outputDir);
       case 'refactor-scope':
         return await refactorScope(payload, jobDir, inputDir, outputDir);
+      case 'drift-resolve':
+        return await driftResolve(payload, jobDir, inputDir, outputDir);
       default:
         throw new Error(`未対応の analyze kind: ${payload.kind}`);
     }
@@ -305,4 +308,59 @@ async function refactorScope(
     created++;
   }
   return `refactor-scope: ${created} 件の提案を作成（cost=$${res.costUsd ?? 0}）`;
+}
+
+/** path の `/.claude/` 以降を論理キーとする（Drift 判定と一致させる）。 */
+function logicalKey(p: string): string {
+  const i = p.indexOf('/.claude/');
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
+async function driftResolve(
+  payload: AnalyzePayload,
+  jobDir: string,
+  inputDir: string,
+  outputDir: string,
+): Promise<string> {
+  const db = getDb();
+  if (!payload.key) throw new Error('drift-resolve: key が必要です');
+
+  const rows = db
+    .prepare(
+      `SELECT s.machine_id, m.name AS machine, s.path, s.hash, s.content
+       FROM snapshots s JOIN machines m ON m.id=s.machine_id
+       WHERE s.is_current=1 AND s.kind IN ('claude_md','skill','memory','settings')`,
+    )
+    .all() as { machine_id: number; machine: string; path: string; hash: string; content: string }[];
+  const variants = rows.filter((r) => logicalKey(r.path) === payload.key);
+  if (variants.length < 2) return 'drift-resolve: 分岐している端末が 2 未満のためスキップ';
+
+  const varDir = ensureDir(path.join(inputDir, 'variants'));
+  for (const v of variants) fs.writeFileSync(path.join(varDir, `${v.machine}.md`), v.content ?? '');
+  fs.writeFileSync(
+    path.join(inputDir, 'context.md'),
+    `論理キー: ${payload.key}\n端末: ${variants.map((v) => v.machine).join(', ')}\n`,
+  );
+
+  const res = await runClaude(template('drift-resolve'), { cwd: jobDir, maxTurns: 30 });
+  if (!res.ok) throw new Error(`drift-resolve 失敗: ${res.error}`);
+
+  const mergedFile = path.join(outputDir, 'merged.md');
+  if (!fs.existsSync(mergedFile)) throw new Error('drift-resolve: output/merged.md が生成されませんでした');
+  const merged = fs.readFileSync(mergedFile, 'utf8');
+  const rationaleFile = path.join(outputDir, 'rationale.md');
+  const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
+
+  let created = 0;
+  const ins = db.prepare(
+    `INSERT INTO proposals(type, machine_id, target_path, base_hash, new_content, diff, rationale, status, job_id, created_at)
+     VALUES('drift', ?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'))`,
+  );
+  for (const v of variants) {
+    if ((v.content ?? '').trim() === merged.trim()) continue; // 既に一致
+    const diff = unifiedDiff(v.content ?? '', merged, path.basename(v.path));
+    ins.run(v.machine_id, v.path, v.hash, merged, diff, rationale, payload.job_id ?? null);
+    created++;
+  }
+  return `drift-resolve(${payload.key}): ${created} 端末へ統合提案を作成（cost=$${res.costUsd ?? 0}）`;
 }

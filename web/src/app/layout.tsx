@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import FailedBadge from '@/components/FailedBadge';
 
 export const metadata: Metadata = {
   title: 'harness',
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
+            <FailedBadge />
           </aside>
           <main className="content">{children}</main>
         </div>

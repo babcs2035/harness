@@ -53,8 +53,35 @@ docker compose up --build
   }
   ```
 
+## 開発機のセットアップ
+
+Hub 上で（対象機への通常 SSH アクセスがある状態で）:
+
+```bash
+deploy/setup-machine.sh <ssh_user@ssh_host> ~/.ssh/harness_ed25519.pub
+```
+
+collector.py / apply.py / gate.sh を配布し、`authorized_keys` に command= 制限付きで Hub 鍵を登録、
+`~/.claude/settings.json` に `cleanupPeriodDays=90` をマージする（`0` は指定禁止）。
+その後 Machines 画面で端末を登録する（Hub 自身は `ssh_host=local`）。
+
+## 運用（スケジューラ・バックアップ）
+
+ホストの cron から毎日 03:00 に収集→提案生成→cleanup を投入する:
+
+```cron
+0 3 * * *  cd /path/to/harness && docker compose exec -T worker node dist/enqueue.js daily
+0 4 * * *  cd /path/to/harness && deploy/backup.sh >> data/backup.log 2>&1
+```
+
+`daily` は「全機 collect → 全機 digest-fold → 全機 claude-md-improve → cleanup」をこの順でキュー投入する
+（worker は直列実行なので当日の収集を反映した提案になる）。失敗ジョブはダッシュボード左下に
+「失敗ジョブ N 件」のバッジで通知され、History 画面のジョブログで詳細を確認できる。
+
 ## セキュリティの要点
 
 - 開発機の `~/.claude` への書き込みは `apply.py` の 1 経路のみ。他はすべて読み取り専用。
-- Hub→開発機の SSH は専用鍵 + `authorized_keys` の `command=` ゲート（gate.sh）で 4 操作に限定。
+- Hub→開発機の SSH は専用鍵 + `authorized_keys` の `command=` ゲート（gate.sh）で操作を collector/apply に限定。
+- 分析コンテナは `CLAUDE_CONFIG_DIR` を分離し、`--allowedTools` を Read/Write/Grep/Glob に限定。
+  `--dangerously-skip-permissions` は `HARNESS_SKIP_PERMISSIONS=1`（コンテナのみ）で opt-in。
 - secrets（OAuth トークン・SSH 秘密鍵）は `.env` / マウントで注入し、リポジトリに含めない。

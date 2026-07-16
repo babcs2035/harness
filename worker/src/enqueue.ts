@@ -21,10 +21,14 @@ function main(): void {
   if (type === 'daily') {
     const db = getDb();
     const machines = db.prepare('SELECT id, name FROM machines WHERE enabled=1').all() as { id: number; name: string }[];
-    const ids: number[] = [];
-    for (const m of machines) ids.push(enqueue('collect', { machine_id: m.id }));
-    // TODO(Phase 2+): 提案生成（analyze）と cleanup をここに連結する
-    console.log(`daily: ${machines.length} 端末の collect を投入 (job ids: ${ids.join(', ')})`);
+    // worker は直列実行。この投入順で「当日の収集を反映した提案」になる:
+    //   全機 collect → 全機 digest-fold → 全機 CLAUDE.md 改善提案 → cleanup
+    let n = 0;
+    for (const m of machines) n += enqueue('collect', { machine_id: m.id }) ? 1 : 0;
+    for (const m of machines) enqueue('analyze', { kind: 'digest-fold', scope: 'global', machine_id: m.id });
+    for (const m of machines) enqueue('analyze', { kind: 'claude-md-improve', scope: 'global', machine_id: m.id });
+    enqueue('cleanup', {});
+    console.log(`daily: ${machines.length} 端末の collect→digest-fold→claude-md-improve と cleanup を投入`);
     return;
   }
 

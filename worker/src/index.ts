@@ -1,33 +1,73 @@
 // worker: jobs テーブルをポーリングして直列実行する常駐ループ。
-// Phase 0 は足場のみ（キューが空なら待機）。ジョブ実装は Phase 1 以降。
+// レート枠と DB 競合を単純化するため同時 1 ジョブ。
 import { getDb } from '@harness/shared';
+import { runCollect } from './jobs/collect.js';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
+
+interface JobRow {
+  id: number;
+  type: string;
+  payload: string | null;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** エラーメッセージから再試行可能性の種別を粗く分類する（ダッシュボード表示・運用判断用）。 */
+export function classifyError(message: string): string {
+  const m = message.toLowerCase();
+  if (/(unauthor|forbidden|permission|auth|token|login)/.test(m)) return 'auth';
+  if (/(rate.?limit|429|quota|usage limit)/.test(m)) return 'rate_limit';
+  if (/(timeout|econnrefused|enetunreach|temporar|connection|reset)/.test(m)) return 'transient';
+  return 'fatal';
+}
+
+async function dispatch(job: JobRow): Promise<string> {
+  const payload = job.payload ? JSON.parse(job.payload) : {};
+  switch (job.type) {
+    case 'collect':
+      return runCollect(payload.machine_id, { fullResync: !!payload.full_resync });
+    default:
+      throw new Error(`未対応のジョブ種別: ${job.type}`);
+  }
+}
+
+async function runOne(db: ReturnType<typeof getDb>): Promise<boolean> {
+  const job = db
+    .prepare("SELECT id, type, payload FROM jobs WHERE status='queued' ORDER BY id LIMIT 1")
+    .get() as JobRow | undefined;
+  if (!job) return false;
+
+  db.prepare("UPDATE jobs SET status='running', started_at=datetime('now') WHERE id=?").run(job.id);
+  console.log(`[worker] job#${job.id} ${job.type} 開始`);
+  try {
+    const log = await dispatch(job);
+    db.prepare("UPDATE jobs SET status='done', finished_at=datetime('now'), log=? WHERE id=?").run(log, job.id);
+    console.log(`[worker] job#${job.id} 完了: ${log}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const kind = classifyError(msg);
+    db.prepare(
+      "UPDATE jobs SET status='failed', finished_at=datetime('now'), log=?, error_kind=?, acknowledged=0 WHERE id=?",
+    ).run(msg, kind, job.id);
+    console.error(`[worker] job#${job.id} 失敗 (${kind}): ${msg}`);
+  }
+  return true;
+}
+
 async function main(): Promise<void> {
   const db = getDb();
   console.log('[worker] 起動。jobs をポーリングします');
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const job = db
-      .prepare("SELECT id, type FROM jobs WHERE status='queued' ORDER BY id LIMIT 1")
-      .get() as { id: number; type: string } | undefined;
-
-    if (!job) {
-      await sleep(POLL_INTERVAL_MS);
-      continue;
+  for (;;) {
+    let worked = false;
+    try {
+      worked = await runOne(db);
+    } catch (err) {
+      console.error('[worker] ループエラー', err);
     }
-
-    console.log(`[worker] job#${job.id} type=${job.type}（Phase 1 以降で実処理を実装）`);
-    // 未実装ジョブはスキップ扱いにして無限ループを防ぐ
-    db.prepare("UPDATE jobs SET status='failed', log='handler 未実装', finished_at=datetime('now') WHERE id=?").run(
-      job.id,
-    );
+    if (!worked) await sleep(POLL_INTERVAL_MS);
   }
 }
 

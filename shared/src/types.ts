@@ -50,6 +50,8 @@ export interface SessionRow {
   started_at: string;
   last_at: string;
   user_messages: string[];
+  /** recent_full=true のセッションのみ、assistant 応答テキストの抜粋を含む */
+  assistant_excerpts?: string[];
   /** true なら assistant 応答要旨も含む直近セッション */
   recent_full: boolean;
   message_count: number;

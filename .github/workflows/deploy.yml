@@ -1,0 +1,74 @@
+name: deploy
+
+# Tailscale 経由で Hub instance に SSH 接続し、harness をデプロイする。
+#
+# 事前設定:
+#   - GitHub Secrets:
+#       TS_OAUTH_CLIENT_ID  … Tailscale OAuth client の ID
+#       TS_OAUTH_SECRET     … 同 secret（scope: devices core、tag:ci を付与）
+#   - GitHub Variables（または Secrets）:
+#       DEPLOY_HOST  … instance の MagicDNS 名 or Tailscale IP（例: hub.tailXXXX.ts.net）
+#       DEPLOY_USER  … SSH ユーザー名
+#       DEPLOY_PATH  … instance 上の harness リポジトリのパス（例: /home/user/harness）
+#   - Tailscale ACL: tag:ci から instance への SSH を許可する。例:
+#       "ssh": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:hub"], "users": ["autogroup:nonroot"] }]
+#   - instance 側: `sudo tailscale up --ssh` で Tailscale SSH を有効化しておく。
+# これにより SSH 秘密鍵を GitHub に置かず、認証は Tailscale SSH + ACL が担う。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 同時デプロイを防ぐ（後発が待ち、進行中は途中キャンセルしない）
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # OAuth client に付与したタグ。ACL の src と一致させる。
+          tags: tag:ci
+          # ephemeral ノードとして接続（ジョブ終了で自動失効）
+          use-cache: 'true'
+
+      - name: Deploy over Tailscale SSH
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          # Tailscale SSH がホスト鍵と認証を担うため秘密鍵は不要。
+          # 初回接続のホスト鍵は自動受理（Tailscale が MagicDNS/証明書を管理）。
+          # DEPLOY_PATH はランナー側で展開してからリモートへ渡す。
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=30 \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "set -euo pipefail
+               cd '${DEPLOY_PATH}'
+               echo '==> git pull'
+               git pull --ff-only
+               echo '==> docker compose up -d --build'
+               docker compose up -d --build
+               echo '==> 稼働状態'
+               docker compose ps"
+
+      - name: Health check
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          # web は 127.0.0.1 のみ公開のため instance 内から確認する
+          ssh -o StrictHostKeyChecking=accept-new \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              'curl -fsS http://127.0.0.1:3000/harness/api/health'

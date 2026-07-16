@@ -1,87 +1,75 @@
 # harness — Claude Code ハーネス育成アプリ（個人用）
 
-複数の開発機の `~/.claude/`（セッションログ・メモリ・CLAUDE.md / rules / skills）を Hub に集約し、
-利用実態を可視化し、AI（Claude Code サブスク）で CLAUDE.md 改善案や skill を生成、
-人間が accept したらバックアップ付きで各開発機に自動適用する継続改善ループを回す。
+複数の開発機の `~/.claude/`（セッションログ・メモリ・CLAUDE.md / rules / skills）を Hub に集約し，
+利用実態を可視化し，AI（Claude Code サブスクリプション）で CLAUDE.md 改善案や skill を生成し，
+人間が accept したらバックアップ付きで各開発機に自動適用する継続改善ループを回す．個人用であり，組織共有機能は持たない．
 
-詳細な設計・フェーズ分解は実装計画（`.claude/plans/`）を参照。
+## 実現する価値
+
+1. **可視化**．セッション数・トークン消費・プロジェクト分布を全端末横断で一望する．
+2. **改善提案**．AI が利用実態から CLAUDE.md の改善案とセルフナレッジ skill を生成する．
+3. **ワンクリック適用**．人間が accept したらバックアップ付きで自動適用する（人間レビュー必須の構造）．
+4. **横断分析**．端末間の設定ドリフトを検出し，昇格・降格・重複統合を提案する．
+
+## ドキュメント
+
+設計・実装・運用の詳細は [docs/](./docs/) にまとめている．
+
+| ドキュメント | 内容 |
+|---|---|
+| [docs/architecture.md](./docs/architecture.md) | 全体構成・コンポーネント責務・データフロー |
+| [docs/data-model.md](./docs/data-model.md) | 3 層の保持ポリシー・SQLite スキーマ・JSONL 実スキーマ |
+| [docs/implementation-plan.md](./docs/implementation-plan.md) | 技術決定・フェーズ分解・完了状況・未検証事項 |
+| [docs/development.md](./docs/development.md) | ローカル開発・ジョブ種別・プロンプト・claude runner |
+| [docs/operations.md](./docs/operations.md) | Hub デプロイ・開発機セットアップ・スケジューラ・バックアップ・CI |
+| [docs/security.md](./docs/security.md) | SSH ゲート・単一書き込み経路・Web 到達制御・secrets |
 
 ## 構成（pnpm workspaces モノレポ）
 
-- `shared/` — web と worker が共有する型・SQLite ラッパ・スキーマ
-- `web/` — Next.js（`basePath:/harness`, standalone）。UI + API Routes
-- `worker/` — ジョブ実行の常駐 Node プロセス（collect / ingest / analyze / apply / cleanup）
-- `agent/` — 開発機に配布する Python スクリプト（collector.py / apply.py / gate.sh）
-- `prompts/` — 分析プロンプトテンプレート
-- `deploy/` — 開発機セットアップ・バックアップスクリプト
-- `data/` — 実行時ボリューム（git 管理外・**Hub が唯一の長期記録**）
+- `shared/`：web と worker が共有する型・SQLite ラッパ・スキーマ．
+- `web/`：Next.js（`basePath:/harness`，standalone）．UI と API Routes．
+- `worker/`：ジョブ実行の常駐 Node プロセス（collect / ingest / analyze / apply / rollback / cleanup）．
+- `agent/`：開発機に配布する Python スクリプト（collector.py / apply.py / gate.sh）．
+- `prompts/`：分析プロンプトテンプレート（5 種）．
+- `deploy/`：開発機セットアップ・バックアップスクリプト．
+- `data/`：実行時ボリューム（git 管理外・**Hub が唯一の長期記録**）．
 
-## ローカル開発
+## クイックスタート（ローカル開発）
 
-前提: [mise](https://mise.jdx.dev/) をインストール済み。
+前提として [mise](https://mise.jdx.dev/) をインストール済みであること．
 
 ```bash
-mise install          # node/pnpm/python を固定バージョンで導入
-mise run setup        # pnpm install
+mise trust                 # 初回のみ
+mise install               # node 24 / pnpm 11 / python 3.12 を導入する
+mise run setup             # pnpm install
 mkdir -p data/{digests,increments,jobs,claude-config}
-mise run db:init      # SQLite にスキーマ適用
-mise run dev          # web を http://localhost:3000/harness で起動
+mise run db:init           # SQLite にスキーマを適用する
+mise run dev               # web を http://localhost:3000/harness で起動する
 ```
 
-## Docker（Hub 本番）
+worker を動かす場合は別ターミナルで `mise run worker` を実行する．
+
+## Hub のデプロイ（Docker）
 
 ```bash
-cp .env.example .env  # CLAUDE_CODE_OAUTH_TOKEN 等を設定
+cp .env.example .env       # CLAUDE_CODE_OAUTH_TOKEN 等を設定する
 mkdir -p data/{digests,increments,jobs,claude-config}
-sudo chown -R 1000:1000 data   # コンテナ実行ユーザー(node/uid 1000)に書き込み権限
+sudo chown -R 1000:1000 data
 
-# Phase 0 の疎通確認は web のみで可
-docker compose up --build web
-# worker も起動する場合は secrets/ssh_key（開発機への専用鍵）を配置してから
-docker compose up --build
+docker compose up --build web      # 疎通確認は web のみでも可
+docker compose up --build          # worker も起動する（secrets/ssh_key を配置してから）
 ```
 
-- `web` コンテナは **127.0.0.1 のみ** に publish。外部到達はホストの nginx 経由のみ。
-- nginx の `/harness/` プロキシ + Basic 認証は**ユーザーがサーバー上で手動設定**（本リポジトリのスコープ外）。
+`web` コンテナは 127.0.0.1 のみに publish する．外部到達はホストの nginx 経由に限定する
+（nginx の `/harness/` プロキシと Basic 認証はユーザーが手動設定する．詳細は [docs/operations.md](./docs/operations.md)）．
 
-  ```nginx
-  location /harness/ {
-      auth_basic "harness";
-      auth_basic_user_file /etc/nginx/htpasswd_harness;
-      proxy_pass http://127.0.0.1:3000/harness/;
-      proxy_set_header Host $host;
-  }
-  ```
+## 技術スタック
 
-## 開発機のセットアップ
+Node 24（Active LTS）／ pnpm 11 ／ Python 3.12（mise で固定）．
+Next.js 16（Turbopack）／ React 19.2 ／ recharts 3 ／ better-sqlite3 12 ／ TypeScript 5.9．
+採用理由は [docs/implementation-plan.md](./docs/implementation-plan.md) を参照する．
 
-Hub 上で（対象機への通常 SSH アクセスがある状態で）:
+## 実装状況
 
-```bash
-deploy/setup-machine.sh <ssh_user@ssh_host> ~/.ssh/harness_ed25519.pub
-```
-
-collector.py / apply.py / gate.sh を配布し、`authorized_keys` に command= 制限付きで Hub 鍵を登録、
-`~/.claude/settings.json` に `cleanupPeriodDays=90` をマージする（`0` は指定禁止）。
-その後 Machines 画面で端末を登録する（Hub 自身は `ssh_host=local`）。
-
-## 運用（スケジューラ・バックアップ）
-
-ホストの cron から毎日 03:00 に収集→提案生成→cleanup を投入する:
-
-```cron
-0 3 * * *  cd /path/to/harness && docker compose exec -T worker node dist/enqueue.js daily
-0 4 * * *  cd /path/to/harness && deploy/backup.sh >> data/backup.log 2>&1
-```
-
-`daily` は「全機 collect → 全機 digest-fold → 全機 claude-md-improve → cleanup」をこの順でキュー投入する
-（worker は直列実行なので当日の収集を反映した提案になる）。失敗ジョブはダッシュボード左下に
-「失敗ジョブ N 件」のバッジで通知され、History 画面のジョブログで詳細を確認できる。
-
-## セキュリティの要点
-
-- 開発機の `~/.claude` への書き込みは `apply.py` の 1 経路のみ。他はすべて読み取り専用。
-- Hub→開発機の SSH は専用鍵 + `authorized_keys` の `command=` ゲート（gate.sh）で操作を collector/apply に限定。
-- 分析コンテナは `CLAUDE_CONFIG_DIR` を分離し、`--allowedTools` を Read/Write/Grep/Glob に限定。
-  `--dangerously-skip-permissions` は `HARNESS_SKIP_PERMISSIONS=1`（コンテナのみ）で opt-in。
-- secrets（OAuth トークン・SSH 秘密鍵）は `.env` / マウントで注入し、リポジトリに含めない。
+Phase 0〜4 をすべて実装済みである．各フェーズの内容・完了コミット・検証結果と未検証事項は
+[docs/implementation-plan.md](./docs/implementation-plan.md) にまとめている．

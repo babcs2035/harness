@@ -2,6 +2,8 @@
 // レート枠と DB 競合を単純化するため同時 1 ジョブ。
 import { getDb } from '@harness/shared';
 import { runCollect } from './jobs/collect.js';
+import { runAnalyze } from './jobs/analyze.js';
+import { runApply, runRollback } from './jobs/apply.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
 
@@ -29,6 +31,12 @@ async function dispatch(job: JobRow): Promise<string> {
   switch (job.type) {
     case 'collect':
       return runCollect(payload.machine_id, { fullResync: !!payload.full_resync });
+    case 'analyze':
+      return runAnalyze({ ...payload, job_id: job.id });
+    case 'apply':
+      return runApply(payload);
+    case 'rollback':
+      return runRollback(payload);
     default:
       throw new Error(`未対応のジョブ種別: ${job.type}`);
   }

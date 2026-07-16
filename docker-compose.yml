@@ -40,3 +40,5 @@ services:
       - PROMPTS_DIR=/prompts
       - AGENT_DIR=/agent
       - JOBS_DIR=/data/jobs
+      # コンテナはサンドボックスなので分析実行時に権限プロンプトを省略できる
+      - HARNESS_SKIP_PERMISSIONS=1

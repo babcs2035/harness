@@ -165,10 +165,11 @@ jobs:
           script: |
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
             cd ${{ secrets.DEPLOY_PATH }}
-            mkdir -p data/digests data/increments data/jobs data/claude-config
             # web/worker はコンテナ内 uid 1000（node）で動くため、bind mount 側の所有者を揃える。
-            # ホストの sudo 権限に依存しないよう Docker 経由（root で動く）で chown する。
-            docker run --rm -v "$(pwd)/data:/data" alpine chown -R 1000:1000 /data
+            # data/ が非 root ユーザー所有のままだと DEPLOY_USER から配下に mkdir できない
+            # ケースがあるため、mkdir と chown を両方 Docker 経由（root で動く）で行う。
+            docker run --rm -v "$(pwd)/data:/data" alpine sh -c \
+              "mkdir -p /data/digests /data/increments /data/jobs /data/claude-config && chown -R 1000:1000 /data"
             # SSH_KEY がファイルとして存在しない状態で up すると、Docker が bind mount 元を
             # 空ディレクトリとして自動作成してしまい worker の SSH 接続が壊れるため、事前に検査する。
             set -a; [ -f .env ] && . ./.env; set +a
@@ -177,6 +178,11 @@ jobs:
               echo "SSH 鍵ファイルが見つかりません（ファイルとして未配置、または誤ってディレクトリ化しています）: $SSH_KEY_PATH" >&2
               exit 1
             fi
+            # worker はコンテナ内 uid 1000（node）で :ro マウントを読むため、
+            # 鍵ファイルの所有者が root のままだと Permission denied になる。所有者だけ揃える
+            # （パーミッションビットは SSH クライアントが要求する 600 のまま変更しない）。
+            SSH_KEY_DIR="$(cd "$(dirname "$SSH_KEY_PATH")" && pwd)"
+            docker run --rm -v "$SSH_KEY_DIR:/k" alpine chown 1000:1000 "/k/$(basename "$SSH_KEY_PATH")"
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f

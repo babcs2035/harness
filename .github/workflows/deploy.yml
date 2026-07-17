@@ -155,12 +155,12 @@ jobs:
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
-            for i in $(seq 1 10); do
+            for i in $(seq 1 20); do
               if curl -sf "http://127.0.0.1:${WEB_PORT:-3000}/harness/api/health" > /dev/null; then
                 echo "health check ok"
                 exit 0
               fi
-              sleep 3
+              sleep 5
             done
             echo "health check failed"
             docker compose logs --tail=100

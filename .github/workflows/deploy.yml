@@ -1,74 +1,150 @@
-name: deploy
-
-# Tailscale 経由で Hub instance に SSH 接続し、harness をデプロイする。
+# harness CI/CD — GHCR へのイメージ push と Tailscale 経由デプロイ
+#
+# フロー:
+#   1. ci-checks    : Biome lint + TypeScript type check
+#   2. build-and-push: web / worker の Docker イメージを GHCR に push
+#   3. deploy        : Tailscale でサーバーに接続し、docker compose pull + restart
 #
 # 事前設定:
 #   - GitHub Secrets:
-#       TS_OAUTH_CLIENT_ID  … Tailscale OAuth client の ID
-#       TS_OAUTH_SECRET     … 同 secret（scope: devices core、tag:ci を付与）
-#   - GitHub Variables（または Secrets）:
-#       DEPLOY_HOST  … instance の MagicDNS 名 or Tailscale IP（例: hub.tailXXXX.ts.net）
+#       TS_OAUTH_CLIENT_ID  … Tailscale OAuth client ID
+#       TS_OAUTH_SECRET     … Tailscale OAuth secret
+#   - GitHub Variables:
+#       DEPLOY_HOST  … instance の MagicDNS 名（例: hub.tailXXXX.ts.net）
 #       DEPLOY_USER  … SSH ユーザー名
-#       DEPLOY_PATH  … instance 上の harness リポジトリのパス（例: /home/user/harness）
-#   - Tailscale ACL: tag:ci から instance への SSH を許可する。例:
-#       "ssh": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:hub"], "users": ["autogroup:nonroot"] }]
-#   - instance 側: `sudo tailscale up --ssh` で Tailscale SSH を有効化しておく。
-# これにより SSH 秘密鍵を GitHub に置かず、認証は Tailscale SSH + ACL が担う。
+#       DEPLOY_PATH  … instance 上の harness リポジトリのパス
+#   - Tailscale ACL: tag:ci から instance への SSH を許可
+#   - instance 側: `sudo tailscale up --ssh` で Tailscale SSH を有効化
+
+name: CI/CD
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# 同時デプロイを防ぐ（後発が待ち、進行中は途中キャンセルしない）
+env:
+  REGISTRY: ghcr.io
+  IMAGE_REPOSITORY: babcs2035/harness
+
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
+  ci-checks:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Setup mise
+        uses: jdx/mise-action@main
+        with:
+          install: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Format & Lint Check with Biome
+        run: pnpm biome ci ./src
+
+      - name: Run Type Check
+        run: pnpm tsc --noEmit
+
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: ci-checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Setup mise
+        uses: jdx/mise-action@main
+        with:
+          install: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@master
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@master
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@master
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push web
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          file: web/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}-web:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push worker
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          file: worker/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}-worker:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy:
+    name: Deploy to Server
+    needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@main
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          # OAuth client に付与したタグ。ACL の src と一致させる。
           tags: tag:ci
-          # ephemeral ノードとして接続（ジョブ終了で自動失効）
-          use-cache: 'true'
 
-      - name: Deploy over Tailscale SSH
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-        run: |
-          set -euo pipefail
-          # Tailscale SSH がホスト鍵と認証を担うため秘密鍵は不要。
-          # 初回接続のホスト鍵は自動受理（Tailscale が MagicDNS/証明書を管理）。
-          # DEPLOY_PATH はランナー側で展開してからリモートへ渡す。
-          ssh -o StrictHostKeyChecking=accept-new \
-              -o ConnectTimeout=30 \
-              "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "set -euo pipefail
-               cd '${DEPLOY_PATH}'
-               echo '==> git pull'
-               git pull --ff-only
-               echo '==> docker compose up -d --build'
-               docker compose up -d --build
-               echo '==> 稼働状態'
-               docker compose ps"
+      - name: Deploy compose file via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          target: ${{ vars.DEPLOY_PATH }}
+          source: "docker-compose.yml"
 
-      - name: Health check
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          # web は 127.0.0.1 のみ公開のため instance 内から確認する
-          ssh -o StrictHostKeyChecking=accept-new \
-              "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              'curl -fsS http://127.0.0.1:3000/harness/api/health'
+      - name: Pull image and restart via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            cd ${{ vars.DEPLOY_PATH }}
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f

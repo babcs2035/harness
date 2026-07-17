@@ -5,9 +5,7 @@ pnpm = "11"
 python = "3.12"
 
 [env]
-# ローカル開発時のデフォルト。本番は .env / docker-compose 側で上書きする。
 DB_PATH = "{{config_root}}/data/harness.db"
-CLAUDE_CONFIG_DIR = "{{config_root}}/data/claude-config"
 
 [tasks.setup]
 description = "依存インストール（pnpm）"

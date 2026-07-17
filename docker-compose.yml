@@ -1,11 +1,14 @@
 # harness Hub。既存 nginx（ホスト側）が /harness/ を 127.0.0.1:3000 へプロキシする。
-# 事前に data/ をコンテナ実行ユーザー(uid 1000 = node)が書き込めるようにしておくこと:
-#   mkdir -p data/{digests,increments,jobs,claude-config} && sudo chown -R 1000:1000 data
+#
+# デプロイ: GitHub Actions が GHCR にイメージを push し、
+#         docker compose pull 後に pull したイメージで再起動する。
+#
+# 事前設定:
+#   - data/ をコンテナ実行ユーザー(uid 1000 = node)が書き込めるようにしておく:
+#       mkdir -p data/{digests,increments,jobs,claude-config} && sudo chown -R 1000:1000 data
 services:
   web:
-    build:
-      context: .
-      dockerfile: web/Dockerfile
+    image: ghcr.io/babcs2035/harness-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     # ループバックのみに publish。外部到達は nginx 経由のみ（直アクセス不可）
     ports:
@@ -21,9 +24,7 @@ services:
       retries: 3
 
   worker:
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
+    image: ghcr.io/babcs2035/harness-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - web

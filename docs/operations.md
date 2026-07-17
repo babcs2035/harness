@@ -86,6 +86,19 @@ Tailscale 到達後の認証は `DEPLOY_KEY`（SSH 秘密鍵）を用いる．
 （[docker-compose.yml](../docker-compose.yml) 参照）．デプロイフローは `docker-compose.yml` と併せてこれらも
 毎回 SCP で転送するため，instance 側で別途 `git pull` する必要はない．
 
+### worker コンテナ内での Tailscale MagicDNS 解決
+
+worker は `collect` / `apply` ジョブで開発機へ Tailscale MagicDNS 名（例: `ws-ktak-dev`）で SSH 接続する．
+`network_mode: host` にしていても，Docker はコンテナ用の `/etc/resolv.conf` を別途生成するため，
+ホストの nameserver がループバック（Ubuntu の systemd-resolved スタブリゾルバ `127.0.0.53` 等）だと，
+Docker が自動でアップストリーム DNS （`/run/systemd/resolve/resolv.conf` 由来）に差し替えてしまう．
+Tailscale の MagicDNS は `tailscale0` インターフェースにスコープした Split DNS として動作するため，
+このアップストリームリストには現れず，コンテナ内では名前解決できない．
+[docker-compose.yml](../docker-compose.yml) の worker サービスでホストの `/etc/resolv.conf` を
+`ro` で bind mount し，Split DNS 設定ごと共有することで解決している．
+instance 側が systemd-resolved を使っていない場合はこの前提が崩れるため，
+`resolvectl status` で Tailscale 用インターフェースの DNS スコープを確認してから deploy すること．
+
 ## 失敗ジョブの通知
 
 ジョブ失敗は `jobs.log` に種別（`auth` / `rate_limit` / `transient` / `fatal`）付きで記録する．

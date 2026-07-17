@@ -30,6 +30,14 @@ services:
     restart: unless-stopped
     # 開発機への SSH は Tailscale MagicDNS 名（例: ws-ktak-dev）を使う。
     # bridge ネットワークだとホストの Tailscale DNS 解決を共有できないため host ネットワークを使う。
+    #
+    # 注意: network_mode: host は network namespace を共有するのみで、/etc/resolv.conf の
+    # 内容までホストと同一になるとは限らない。ホストの nameserver がループバック
+    # （systemd-resolved のスタブリゾルバ 127.0.0.53 等）の場合、Docker はコンテナ用の
+    # resolv.conf を生成する際に自動でアップストリーム DNS へ差し替えてしまう。
+    # Tailscale の MagicDNS は tailscale0 インターフェースにスコープした Split DNS として
+    # 動作するため、このアップストリームリストには現れず解決できなくなる。
+    # ホストの /etc/resolv.conf をそのまま bind mount し、Split DNS 設定ごと共有する。
     network_mode: host
     depends_on:
       - web
@@ -38,6 +46,7 @@ services:
       - ./prompts:/prompts:ro
       - ./agent:/agent:ro
       - ${HARNESS_SSH_KEY:-./secrets/ssh_key}:/secrets/ssh_key:ro
+      - /etc/resolv.conf:/etc/resolv.conf:ro
     environment:
       - DB_PATH=/data/harness.db
       - CLAUDE_CONFIG_DIR=/data/claude-config

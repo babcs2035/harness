@@ -28,6 +28,9 @@ services:
     container_name: harness-worker
     image: ghcr.io/babcs2035/harness-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # 開発機への SSH は Tailscale MagicDNS 名（例: ws-ktak-dev）を使う。
+    # bridge ネットワークだとホストの Tailscale DNS 解決を共有できないため host ネットワークを使う。
+    network_mode: host
     depends_on:
       - web
     volumes:

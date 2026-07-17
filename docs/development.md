@@ -54,6 +54,7 @@ worker は `jobs` テーブルを 2〜5 秒間隔でポーリングし，同時 
 
 | type | payload | 内容 |
 |---|---|---|
+| `setup` | `{ machine_id }` | Machines 登録直後に自動投入。開発機へ collector.py/apply.py/gate.sh を配布し settings.json を更新する |
 | `collect` | `{ machine_id, full_resync? }` | 端末を収集し ingest する |
 | `analyze` | `{ kind, scope, machine_id?, project_id?, key? }` | claude で分析し提案／ダイジェストを生成する |
 | `apply` | `{ proposal_id, edited_content? }` | 承認済み提案を開発機に適用する |

@@ -31,7 +31,12 @@ export async function POST(req: Request) {
          VALUES(?, ?, ?, ?, ?, 1)`,
       )
       .run(name, ssh_host, ssh_user, workspace_root || null, max_depth || null);
-    return NextResponse.json({ id: Number(r.lastInsertRowid) });
+    const machineId = Number(r.lastInsertRowid);
+    // 登録直後に collector.py/apply.py/gate.sh の配布（setup ジョブ）を自動投入する。
+    db.prepare(
+      "INSERT INTO jobs(type, payload, status, created_at) VALUES('setup', ?, 'queued', datetime('now'))",
+    ).run(JSON.stringify({ machine_id: machineId }));
+    return NextResponse.json({ id: machineId });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 400 });
   }

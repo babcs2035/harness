@@ -13,24 +13,20 @@ export interface Machine {
 }
 
 /** ssh_host が local/localhost の端末は Hub 自身とみなし、ssh を介さず直接実行する。 */
-function isLocal(machine: Machine): boolean {
+export function isLocal(machine: Machine): boolean {
   return machine.ssh_host === 'local' || machine.ssh_host === 'localhost' || machine.ssh_host === '127.0.0.1';
 }
 
-function sshBaseArgs(machine: Machine): string[] {
+function sshConnectOpts(): string[] {
   const key = process.env.HARNESS_SSH_KEY;
   const args: string[] = [];
   if (key) args.push('-i', key);
-  args.push(
-    '-o',
-    'BatchMode=yes',
-    '-o',
-    'StrictHostKeyChecking=accept-new',
-    '-o',
-    'ConnectTimeout=15',
-    `${machine.ssh_user}@${machine.ssh_host}`,
-  );
+  args.push('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15');
   return args;
+}
+
+function sshBaseArgs(machine: Machine): string[] {
+  return [...sshConnectOpts(), `${machine.ssh_user}@${machine.ssh_host}`];
 }
 
 interface SpawnResult {
@@ -128,4 +124,80 @@ export async function runRemoteRollback(machine: Machine, backupPath: string): P
   } catch {
     return { ok: true, backup_path: backupPath };
   }
+}
+
+// deploy/setup-machine.sh の settings.json マージ処理と同一のロジック。
+// authorized_keys への鍵登録はここでは行わない（HARNESS_SSH_KEY は既に各開発機に
+// 登録済みの前提で運用しているため）。
+const SETTINGS_MERGE_SCRIPT = `
+import json, os, time
+p = os.path.expanduser("~/.claude/settings.json")
+days = int(os.environ.get("CLEANUP_DAYS", "90"))
+if days <= 0:
+    raise SystemExit("cleanupPeriodDays に 0 以下は指定禁止です")
+data = {}
+if os.path.isfile(p):
+    with open(p, encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except ValueError:
+            data = {}
+    with open(p + f".harness.bak.{int(time.time())}", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+data["cleanupPeriodDays"] = days
+os.makedirs(os.path.dirname(p), exist_ok=True)
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+print("settings.json 更新完了: cleanupPeriodDays =", days)
+`;
+
+/**
+ * 開発機に collector.py / apply.py / gate.sh を配布し、settings.json の
+ * cleanupPeriodDays をマージする（Machines 登録時に自動投入される setup ジョブから呼ばれる）。
+ * local 端末（Hub 自身）は agent/ を直接参照するため何もしない。
+ */
+export async function runRemoteSetup(machine: Machine): Promise<string> {
+  if (isLocal(machine)) {
+    return `machine#${machine.id}(${machine.name}) は Hub 自身のため setup 不要`;
+  }
+  const target = `${machine.ssh_user}@${machine.ssh_host}`;
+
+  const mkdirRes = await runProcess('ssh', [...sshBaseArgs(machine), 'mkdir -p ~/.harness ~/.claude'], '');
+  if (mkdirRes.code !== 0) {
+    throw new Error(`~/.harness 作成失敗 (code=${mkdirRes.code}): ${mkdirRes.stderr.slice(0, 500)}`);
+  }
+
+  const scpRes = await runProcess(
+    'scp',
+    [
+      ...sshConnectOpts(),
+      path.join(AGENT_DIR, 'collector.py'),
+      path.join(AGENT_DIR, 'apply.py'),
+      path.join(AGENT_DIR, 'gate.sh'),
+      `${target}:~/.harness/`,
+    ],
+    '',
+  );
+  if (scpRes.code !== 0) {
+    throw new Error(
+      `collector.py/apply.py/gate.sh の配布失敗 (code=${scpRes.code}): ${scpRes.stderr.slice(0, 500)}`,
+    );
+  }
+
+  const chmodRes = await runProcess('ssh', [...sshBaseArgs(machine), 'chmod +x ~/.harness/gate.sh'], '');
+  if (chmodRes.code !== 0) {
+    throw new Error(`gate.sh の実行権限付与失敗 (code=${chmodRes.code}): ${chmodRes.stderr.slice(0, 500)}`);
+  }
+
+  const cleanupDays = process.env.CLEANUP_PERIOD_DAYS || '90';
+  const mergeRes = await runProcess(
+    'ssh',
+    [...sshBaseArgs(machine), `CLEANUP_DAYS=${cleanupDays} python3 -`],
+    SETTINGS_MERGE_SCRIPT,
+  );
+  if (mergeRes.code !== 0) {
+    throw new Error(`settings.json 更新失敗 (code=${mergeRes.code}): ${mergeRes.stderr.slice(0, 500)}`);
+  }
+
+  return `machine#${machine.id}(${machine.name}) へ collector.py/apply.py/gate.sh を配布し ${mergeRes.stdout.trim()}`;
 }

@@ -5,15 +5,20 @@
 
 ## SSH（Hub → 開発機）
 
-- Hub から開発機への接続は専用鍵を用いる．
-- 各開発機の `authorized_keys` に次の制限付きで公開鍵を登録する．
+- Hub から開発機への接続は専用鍵（`secrets/ssh_key`）を用いる．
+- `gate.sh` は `SSH_ORIGINAL_COMMAND` を検査し，`python3 ~/.harness/collector.py` と
+  `python3 ~/.harness/apply.py`（`--rollback` を含む）のみを許可する仕組みとして用意している．
+  `authorized_keys` に次のように `command=` 付きで公開鍵を登録すればこの制限を強制できる．
 
   ```
   command="~/.harness/gate.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 AAAA... hub
   ```
 
-- `gate.sh` は `SSH_ORIGINAL_COMMAND` を検査し，`python3 ~/.harness/collector.py` と
-  `python3 ~/.harness/apply.py`（`--rollback` を含む）のみを許可する．それ以外は拒否する．
+- ただし Machines 登録時に自動投入される `setup` ジョブ（`collector.py`/`apply.py`/`gate.sh` の配布，
+  `scp` と任意コマンド実行を要する）は上記の制限下では動作しない．現状の運用は `command=` 制限を
+  付けずに公開鍵を登録しており，Hub 専用鍵が漏洩した場合は開発機で任意コマンドを実行されうることを
+  許容している．より厳格な制限を優先する場合は，`setup` ジョブの自動投入を無効化し
+  [operations.md](./operations.md) の `deploy/setup-machine.sh` による手動セットアップに戻すこと．
 
 ## 元データの保護
 

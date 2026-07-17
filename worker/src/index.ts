@@ -5,6 +5,7 @@ import { runAnalyze } from './jobs/analyze.js';
 import { runApply, runRollback } from './jobs/apply.js';
 import { runCleanup } from './jobs/cleanup.js';
 import { runCollect } from './jobs/collect.js';
+import { runSetup } from './jobs/setup.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
 
@@ -30,6 +31,8 @@ export function classifyError(message: string): string {
 async function dispatch(job: JobRow): Promise<string> {
   const payload = job.payload ? JSON.parse(job.payload) : {};
   switch (job.type) {
+    case 'setup':
+      return runSetup(payload);
     case 'collect':
       return runCollect(payload.machine_id, { fullResync: !!payload.full_resync });
     case 'analyze':

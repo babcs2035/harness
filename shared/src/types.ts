@@ -96,9 +96,10 @@ export interface ClaudeResult {
   structured_output?: unknown;
 }
 
-export type JobType = 'collect' | 'ingest' | 'analyze' | 'apply' | 'rollback' | 'cleanup';
+export type JobType = 'setup' | 'collect' | 'ingest' | 'analyze' | 'apply' | 'rollback' | 'cleanup';
 
 export interface JobPayloadMap {
+  setup: { machine_id: number };
   collect: { machine_id: number; full_resync?: boolean };
   ingest: { machine_id: number; increment_path: string };
   analyze: {

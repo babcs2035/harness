@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS patterns(
 -- ジョブキュー
 CREATE TABLE IF NOT EXISTS jobs(
   id INTEGER PRIMARY KEY,
-  type TEXT NOT NULL,        -- collect|ingest|analyze|apply|rollback|cleanup
+  type TEXT NOT NULL,        -- setup|collect|ingest|analyze|apply|rollback|cleanup
   payload TEXT,              -- JSON
   status TEXT NOT NULL DEFAULT 'queued', -- queued|running|done|failed
   error_kind TEXT,           -- auth|rate_limit|transient|fatal など

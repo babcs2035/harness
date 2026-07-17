@@ -31,20 +31,23 @@ location /harness/ {
 
 ## 開発機のセットアップ
 
-Hub 上で，対象機への通常の SSH アクセスがある状態で実行する（gate 制限を掛ける前のブートストラップである）．
+`authorized_keys` への Hub 公開鍵登録は，対象機への通常の SSH アクセス（`ssh-copy-id` 等）が
+必要な唯一の手動ステップである．登録さえ済んでいれば，以降は **Machines 画面で端末を登録するだけで
+残りは自動化される**．登録直後に `setup` ジョブが自動投入され，worker が次を行う．
+
+1. `~/.harness/` を作成し `collector.py` / `apply.py` / `gate.sh` を配布する．
+2. `~/.claude/settings.json` に `cleanupPeriodDays=90`（`CLEANUP_PERIOD_DAYS` 環境変数で変更可）を
+   マージする（バックアップ付き）．**`0` は指定禁止**である（削除無効ではなくトランスクリプト書き込み
+   自体が止まる既知バグがあるため）．
+
+Hub 自身（`ssh_host=local`）は setup 不要で，worker が自動でスキップする．
+
+`deploy/setup-machine.sh` は上記 1〜2 に加えて `authorized_keys` 登録も一括で行うスクリプトとして
+引き続き利用できる（初回のブートストラップや，`setup` ジョブが失敗した場合の手動リカバリに使う）．
 
 ```bash
 deploy/setup-machine.sh <ssh_user@ssh_host> ~/.ssh/harness_ed25519.pub
 ```
-
-このスクリプトは次を行う．
-
-1. `~/.harness/` を作成し `collector.py` / `apply.py` / `gate.sh` を配布する．
-2. `authorized_keys` に `command="~/.harness/gate.sh"` 付きで Hub 公開鍵を登録する（冪等）．
-3. `~/.claude/settings.json` に `cleanupPeriodDays=90` をマージする（バックアップ付き）．**`0` は指定禁止**である
-   （削除無効ではなくトランスクリプト書き込み自体が止まる既知バグがあるため）．
-
-その後，Machines 画面で端末を登録する（Hub 自身は `ssh_host=local`）．
 
 ## スケジューラとバックアップ（ホスト cron）
 

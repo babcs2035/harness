@@ -148,6 +148,10 @@ jobs:
           script: |
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
             cd ${{ secrets.DEPLOY_PATH }}
+            mkdir -p data/digests data/increments data/jobs data/claude-config
+            # web/worker はコンテナ内 uid 1000（node）で動くため、bind mount 側の所有者を揃える。
+            # ホストの sudo 権限に依存しないよう Docker 経由（root で動く）で chown する。
+            docker run --rm -v "$(pwd)/data:/data" alpine chown -R 1000:1000 /data
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f

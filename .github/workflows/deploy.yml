@@ -130,14 +130,16 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Deploy compose file via SCP
+      - name: Deploy compose file and runtime assets via SCP
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           target: ${{ secrets.DEPLOY_PATH }}
-          source: "docker-compose.yml"
+          # prompts/ と agent/ は worker に :ro マウントされる実行時アセットのため、
+          # docker-compose.yml と併せて毎回転送し instance 側を最新化する。
+          source: "docker-compose.yml,prompts,agent"
 
       - name: Pull image and restart via SSH
         uses: appleboy/ssh-action@master
@@ -163,5 +165,7 @@ jobs:
               sleep 5
             done
             echo "health check failed"
-            docker compose logs --tail=100
+            docker compose ps
+            curl -v "http://127.0.0.1:${WEB_PORT:-3000}/harness/api/health" || true
+            docker compose logs --tail=200
             exit 1

@@ -8,6 +8,7 @@
 #       mkdir -p data/{digests,increments,jobs,claude-config} && sudo chown -R 1000:1000 data
 services:
   web:
+    container_name: harness-web
     image: ghcr.io/babcs2035/harness-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     # ループバックのみに publish。外部到達は nginx 経由のみ（直アクセス不可）
@@ -24,6 +25,7 @@ services:
       retries: 3
 
   worker:
+    container_name: harness-worker
     image: ghcr.io/babcs2035/harness-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:

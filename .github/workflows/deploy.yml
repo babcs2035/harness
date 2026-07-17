@@ -130,6 +130,21 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
+      - name: Prepare instance directories for SCP overwrite
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            # 過去の docker compose up が prompts/・agent/ を bind mount 元として
+            # root 所有で自動作成したままだと、後続の SCP 転送が Permission denied
+            # になるため、SCP 実行ユーザーに所有者を揃えておく。
+            mkdir -p prompts agent
+            docker run --rm -v "$(pwd)/prompts:/p" -v "$(pwd)/agent:/a" alpine \
+              chown -R "$(id -u):$(id -g)" /p /a
+
       - name: Deploy compose file and runtime assets via SCP
         uses: appleboy/scp-action@master
         with:
@@ -154,6 +169,14 @@ jobs:
             # web/worker はコンテナ内 uid 1000（node）で動くため、bind mount 側の所有者を揃える。
             # ホストの sudo 権限に依存しないよう Docker 経由（root で動く）で chown する。
             docker run --rm -v "$(pwd)/data:/data" alpine chown -R 1000:1000 /data
+            # SSH_KEY がファイルとして存在しない状態で up すると、Docker が bind mount 元を
+            # 空ディレクトリとして自動作成してしまい worker の SSH 接続が壊れるため、事前に検査する。
+            set -a; [ -f .env ] && . ./.env; set +a
+            SSH_KEY_PATH="${HARNESS_SSH_KEY:-secrets/ssh_key}"
+            if [ ! -f "$SSH_KEY_PATH" ]; then
+              echo "SSH 鍵ファイルが見つかりません（ファイルとして未配置、または誤ってディレクトリ化しています）: $SSH_KEY_PATH" >&2
+              exit 1
+            fi
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f

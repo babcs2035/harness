@@ -20,13 +20,16 @@ function main(): void {
 
   if (type === 'daily') {
     const db = getDb();
-    const machines = db.prepare('SELECT id, name FROM machines WHERE enabled=1').all() as { id: number; name: string }[];
+    const machines = db.prepare('SELECT id, name FROM machines WHERE enabled=1').all() as {
+      id: number;
+      name: string;
+    }[];
     // worker は直列実行。この投入順で「当日の収集を反映した提案」になる:
     //   全機 collect → 全機 digest-fold → 全機 CLAUDE.md 改善提案 → cleanup
-    let n = 0;
-    for (const m of machines) n += enqueue('collect', { machine_id: m.id }) ? 1 : 0;
+    for (const m of machines) enqueue('collect', { machine_id: m.id });
     for (const m of machines) enqueue('analyze', { kind: 'digest-fold', scope: 'global', machine_id: m.id });
-    for (const m of machines) enqueue('analyze', { kind: 'claude-md-improve', scope: 'global', machine_id: m.id });
+    for (const m of machines)
+      enqueue('analyze', { kind: 'claude-md-improve', scope: 'global', machine_id: m.id });
     enqueue('cleanup', {});
     console.log(`daily: ${machines.length} 端末の collect→digest-fold→claude-md-improve と cleanup を投入`);
     return;

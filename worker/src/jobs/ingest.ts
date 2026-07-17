@@ -1,5 +1,5 @@
-import { getDb } from '@harness/shared';
 import type { Increment } from '@harness/shared';
+import { getDb } from '@harness/shared';
 
 export interface IngestSummary {
   stats: number;
@@ -13,7 +13,11 @@ export interface IngestSummary {
  * 増分を単一トランザクションで取り込む。カーソル更新も同一トランザクションに含めることで、
  * ingest 成功時のみカーソルが進む（＝失敗時は再収集で同じ増分を再適用でき、二重計上しない）。
  */
-export function ingestIncrement(machineId: number, increment: Increment, incrementFilePath: string): IngestSummary {
+export function ingestIncrement(
+  machineId: number,
+  increment: Increment,
+  incrementFilePath: string,
+): IngestSummary {
   const db = getDb();
   const now = new Date().toISOString();
 

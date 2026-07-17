@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getDb } from '@harness/shared';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
   db.prepare("UPDATE proposals SET status='accepted', decided_at=? WHERE id=?").run(now, proposalId);
   const r = db
-    .prepare("INSERT INTO jobs(type, payload, status, created_at) VALUES('apply', ?, 'queued', datetime('now'))")
+    .prepare(
+      "INSERT INTO jobs(type, payload, status, created_at) VALUES('apply', ?, 'queued', datetime('now'))",
+    )
     .run(JSON.stringify({ proposal_id: proposalId }));
   return NextResponse.json({ ok: true, job_id: Number(r.lastInsertRowid) });
 }

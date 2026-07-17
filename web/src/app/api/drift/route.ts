@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getDb } from '@harness/shared';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,8 @@ export function GET() {
   for (const r of rows) {
     const key = logicalKey(r.path);
     if (!byKey.has(key)) byKey.set(key, { kind: r.kind, cells: {} });
-    byKey.get(key)!.cells[r.machine] = r.hash;
+    const entry = byKey.get(key);
+    if (entry) entry.cells[r.machine] = r.hash;
   }
 
   const keys = Array.from(byKey.entries())

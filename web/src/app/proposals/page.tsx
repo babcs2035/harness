@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { shortTime } from '@/lib/format';
 
@@ -48,6 +48,7 @@ function DiffView({ diff }: { diff: string }) {
           color = 'var(--muted)';
         }
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: diff 行は同一内容が繰り返されうるため行番号以外に安定した key を持たない
           <div key={i} style={{ color, background: bg, whiteSpace: 'pre-wrap' }}>
             {l || ' '}
           </div>
@@ -65,21 +66,21 @@ export default function ProposalsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<number, string | undefined>>({});
 
-  function reload() {
+  const reload = useCallback(() => {
     api<{ proposals: Proposal[] }>('/api/proposals?status=pending')
       .then((d) => setProposals(d.proposals))
       .catch((e) => setMsg(`エラー: ${e.message ?? e}`));
     api<{ patterns: Pattern[] }>('/api/patterns')
       .then((d) => setPatterns(d.patterns))
       .catch(() => setPatterns([]));
-  }
+  }, []);
   useEffect(() => {
     reload();
     api<{ machines: Machine[] }>('/api/machines').then((d) => {
       setMachines(d.machines);
       if (d.machines[0]) setSelMachine(d.machines[0].id);
     });
-  }, []);
+  }, [reload]);
 
   async function analyze(kind: string) {
     if (!selMachine) {
@@ -134,18 +135,28 @@ export default function ProposalsPage() {
             </option>
           ))}
         </select>
-        <button className="secondary" onClick={() => analyze('digest-fold')}>
+        <button type="button" className="secondary" onClick={() => analyze('digest-fold')}>
           digest-fold 実行
         </button>
-        <button onClick={() => analyze('claude-md-improve')}>CLAUDE.md 改善案</button>
-        <button onClick={() => analyze('skill-gen')}>skill 生成</button>
-        <button onClick={() => analyze('refactor-scope')}>スコープ再編</button>
-        <button className="secondary" onClick={reload}>
+        <button type="button" onClick={() => analyze('claude-md-improve')}>
+          CLAUDE.md 改善案
+        </button>
+        <button type="button" onClick={() => analyze('skill-gen')}>
+          skill 生成
+        </button>
+        <button type="button" onClick={() => analyze('refactor-scope')}>
+          スコープ再編
+        </button>
+        <button type="button" className="secondary" onClick={reload}>
           再読込
         </button>
       </div>
 
-      {msg && <div className="panel" style={{ marginBottom: 16 }}>{msg}</div>}
+      {msg && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          {msg}
+        </div>
+      )}
 
       {patterns.length > 0 && (
         <div className="panel" style={{ marginBottom: 16 }}>
@@ -177,10 +188,17 @@ export default function ProposalsPage() {
 
       {proposals.map((p) => (
         <div className="panel" key={p.id} style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 10,
+            }}
+          >
             <div>
-              <span className="badge">{p.type}</span>{' '}
-              <strong>{p.target_path}</strong> <span className="muted">@ {p.machine}</span>
+              <span className="badge">{p.type}</span> <strong>{p.target_path}</strong>{' '}
+              <span className="muted">@ {p.machine}</span>
             </div>
             <span className="muted">{shortTime(p.created_at)}</span>
           </div>
@@ -193,7 +211,15 @@ export default function ProposalsPage() {
           )}
 
           {editing[p.id] === undefined ? (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, maxHeight: 400, overflowY: 'auto' }}>
+            <div
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: 10,
+                maxHeight: 400,
+                overflowY: 'auto',
+              }}
+            >
               <DiffView diff={p.diff || '(差分表示なし)'} />
             </div>
           ) : (
@@ -205,17 +231,27 @@ export default function ProposalsPage() {
           )}
 
           <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-            <button onClick={() => accept(p.id)}>{editing[p.id] === undefined ? 'Accept' : 'この内容で Accept'}</button>
+            <button type="button" onClick={() => accept(p.id)}>
+              {editing[p.id] === undefined ? 'Accept' : 'この内容で Accept'}
+            </button>
             {editing[p.id] === undefined ? (
-              <button className="secondary" onClick={() => setEditing({ ...editing, [p.id]: p.new_content })}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditing({ ...editing, [p.id]: p.new_content })}
+              >
                 編集
               </button>
             ) : (
-              <button className="secondary" onClick={() => setEditing({ ...editing, [p.id]: undefined })}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditing({ ...editing, [p.id]: undefined })}
+              >
                 編集をやめる
               </button>
             )}
-            <button className="secondary" onClick={() => reject(p.id)}>
+            <button type="button" className="secondary" onClick={() => reject(p.id)}>
               Reject
             </button>
           </div>

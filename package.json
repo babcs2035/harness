@@ -9,9 +9,11 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "db:init": "pnpm --filter @harness/shared exec tsx src/init-db.ts"
+    "db:init": "pnpm --filter @harness/shared exec tsx src/init-db.ts",
+    "typecheck": "pnpm --filter @harness/shared build && pnpm -r run typecheck"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.4",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3"
   }

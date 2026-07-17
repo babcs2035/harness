@@ -37,7 +37,11 @@ function digestKey(scope: string, machineId?: number | null, projectId?: number 
 }
 
 /** 現在のダイジェスト本文（無ければ null）を読む。 */
-export function loadDigest(scope: string, machineId?: number | null, projectId?: number | null): unknown | null {
+export function loadDigest(
+  scope: string,
+  machineId?: number | null,
+  projectId?: number | null,
+): unknown | null {
   const db = getDb();
   const row = db
     .prepare(
@@ -88,10 +92,7 @@ export function saveDigest(
 }
 
 /** パターン候補（description ごと）の出現回数を加算・更新する。 */
-export function upsertPatterns(
-  digestId: number,
-  patterns: { description: string; count?: number }[],
-): void {
+export function upsertPatterns(digestId: number, patterns: { description: string; count?: number }[]): void {
   const db = getDb();
   const now = new Date().toISOString();
   const find = db.prepare('SELECT id, count FROM patterns WHERE digest_id=? AND description=?');

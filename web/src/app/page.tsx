@@ -15,7 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '@/lib/api';
-import { compact, comma } from '@/lib/format';
+import { comma, compact } from '@/lib/format';
 
 interface Daily {
   date: string;
@@ -89,7 +89,12 @@ export default function OverviewPage() {
       <h2>Overview</h2>
       <div className="toolbar">
         {RANGES.map((r) => (
-          <button key={r.key} className={r.key === range ? '' : 'secondary'} onClick={() => setRange(r.key)}>
+          <button
+            type="button"
+            key={r.key}
+            className={r.key === range ? '' : 'secondary'}
+            onClick={() => setRange(r.key)}
+          >
             {r.label}
           </button>
         ))}
@@ -114,7 +119,12 @@ export default function OverviewPage() {
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.daily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                  <XAxis dataKey="date" tickFormatter={(d) => String(d).slice(5)} stroke="#8b949e" fontSize={11} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(d) => String(d).slice(5)}
+                    stroke="#8b949e"
+                    fontSize={11}
+                  />
                   <YAxis tickFormatter={compact} stroke="#8b949e" fontSize={11} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(v) => comma(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -130,10 +140,22 @@ export default function OverviewPage() {
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={data.sessionsDaily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                  <XAxis dataKey="date" tickFormatter={(d) => String(d).slice(5)} stroke="#8b949e" fontSize={11} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(d) => String(d).slice(5)}
+                    stroke="#8b949e"
+                    fontSize={11}
+                  />
                   <YAxis allowDecimals={false} stroke="#8b949e" fontSize={11} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Line type="monotone" dataKey="sessions" name="セッション" stroke={COLORS.sessions} strokeWidth={2} dot={false} />
+                  <Line
+                    type="monotone"
+                    dataKey="sessions"
+                    name="セッション"
+                    stroke={COLORS.sessions}
+                    strokeWidth={2}
+                    dot={false}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -152,8 +174,8 @@ export default function OverviewPage() {
                 <YAxis type="category" dataKey="short" width={140} stroke="#8b949e" fontSize={11} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => comma(Number(v))} />
                 <Bar dataKey="tokens" name="トークン">
-                  {data.byProject.map((_, i) => (
-                    <Cell key={i} fill={BAR_PALETTE[i % BAR_PALETTE.length]} />
+                  {data.byProject.map((p, i) => (
+                    <Cell key={p.project} fill={BAR_PALETTE[i % BAR_PALETTE.length]} />
                   ))}
                 </Bar>
               </BarChart>

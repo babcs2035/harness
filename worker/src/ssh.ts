@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import type { CollectorInput, Increment, ApplyInput, ApplyResult } from '@harness/shared';
+import type { ApplyInput, ApplyResult, CollectorInput, Increment } from '@harness/shared';
 import { AGENT_DIR } from './lib/paths.js';
 
 export interface Machine {
@@ -22,9 +22,12 @@ function sshBaseArgs(machine: Machine): string[] {
   const args: string[] = [];
   if (key) args.push('-i', key);
   args.push(
-    '-o', 'BatchMode=yes',
-    '-o', 'StrictHostKeyChecking=accept-new',
-    '-o', 'ConnectTimeout=15',
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'StrictHostKeyChecking=accept-new',
+    '-o',
+    'ConnectTimeout=15',
     `${machine.ssh_user}@${machine.ssh_host}`,
   );
   return args;
@@ -111,7 +114,11 @@ export async function runRemoteRollback(machine: Machine, backupPath: string): P
   if (isLocal(machine)) {
     res = await runProcess('python3', [path.join(AGENT_DIR, 'apply.py'), '--rollback', backupPath], '');
   } else {
-    res = await runProcess('ssh', [...sshBaseArgs(machine), `python3 ~/.harness/apply.py --rollback ${backupPath}`], '');
+    res = await runProcess(
+      'ssh',
+      [...sshBaseArgs(machine), `python3 ~/.harness/apply.py --rollback ${backupPath}`],
+      '',
+    );
   }
   if (res.code !== 0) {
     return { ok: false, error: `rollback 失敗 (code=${res.code}): ${res.stderr.slice(0, 500)}` };

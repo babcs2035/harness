@@ -40,7 +40,8 @@
 
 - `CLAUDE_CODE_OAUTH_TOKEN`（`claude setup-token` の発行物）と SSH 秘密鍵は `.env` またはマウントで注入し，
   リポジトリには含めない（`.gitignore` で `.env` と鍵を除外する）．
-- CI（GitHub Actions）では Tailscale SSH を用い，SSH 秘密鍵を GitHub に置かない構成とする（[operations.md](./operations.md) を参照）．
+- CI（GitHub Actions）では Tailscale ネットワーク到達に `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` を用い，
+  到達後の SSH 認証には GitHub Secrets の `DEPLOY_KEY`（SSH 秘密鍵）を用いる（[operations.md](./operations.md) を参照）．
 
 ## 認証に関する確認事項
 

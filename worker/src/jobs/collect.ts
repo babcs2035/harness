@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb } from '@harness/shared';
 import type { CollectorInput, SessionCursor } from '@harness/shared';
-import { runRemoteCollector, type Machine } from '../ssh.js';
+import { getDb } from '@harness/shared';
+import { ensureDir, INCREMENTS_DIR } from '../lib/paths.js';
+import { type Machine, runRemoteCollector } from '../ssh.js';
 import { ingestIncrement } from './ingest.js';
-import { INCREMENTS_DIR, ensureDir } from '../lib/paths.js';
 
 /**
  * 1 端末を収集する。Hub 保持のカーソル + スナップショットハッシュを組み立てて collector を実行し、

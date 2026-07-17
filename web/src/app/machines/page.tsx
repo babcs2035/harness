@@ -20,7 +20,13 @@ interface Machine {
 export default function MachinesPage() {
   const [machines, setMachines] = useState<Machine[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', ssh_host: '', ssh_user: '', workspace_root: '', max_depth: '' });
+  const [form, setForm] = useState({
+    name: '',
+    ssh_host: '',
+    ssh_user: '',
+    workspace_root: '',
+    max_depth: '',
+  });
 
   function reload() {
     api<{ machines: Machine[] }>('/api/machines')
@@ -58,7 +64,9 @@ export default function MachinesPage() {
         method: 'POST',
         body: JSON.stringify({ type: 'collect', payload: { machine_id: id, full_resync: fullResync } }),
       });
-      setMsg(`収集ジョブを投入しました（machine#${id}${fullResync ? ' / full-resync' : ''}）。worker が処理します。`);
+      setMsg(
+        `収集ジョブを投入しました（machine#${id}${fullResync ? ' / full-resync' : ''}）。worker が処理します。`,
+      );
     } catch (e) {
       setMsg(`投入失敗: ${e instanceof Error ? e.message : e}`);
     }
@@ -98,8 +106,10 @@ export default function MachinesPage() {
                   <td className="num">{m.session_count}</td>
                   <td className="muted">{shortTime(m.last_collected_at)}</td>
                   <td>
-                    <button onClick={() => collect(m.id, false)}>収集</button>{' '}
-                    <button className="secondary" onClick={() => collect(m.id, true)}>
+                    <button type="button" onClick={() => collect(m.id, false)}>
+                      収集
+                    </button>{' '}
+                    <button type="button" className="secondary" onClick={() => collect(m.id, true)}>
                       full
                     </button>
                   </td>
@@ -121,15 +131,27 @@ export default function MachinesPage() {
           <form className="stack" onSubmit={addMachine}>
             <label>
               名前
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </label>
             <label>
               SSH ホスト（Hub 自身なら local）
-              <input value={form.ssh_host} onChange={(e) => setForm({ ...form, ssh_host: e.target.value })} required />
+              <input
+                value={form.ssh_host}
+                onChange={(e) => setForm({ ...form, ssh_host: e.target.value })}
+                required
+              />
             </label>
             <label>
               SSH ユーザー
-              <input value={form.ssh_user} onChange={(e) => setForm({ ...form, ssh_user: e.target.value })} required />
+              <input
+                value={form.ssh_user}
+                onChange={(e) => setForm({ ...form, ssh_user: e.target.value })}
+                required
+              />
             </label>
             <label>
               workspace ルート（省略時 ~/workspace）

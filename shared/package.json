@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && cp src/schema.sql dist/schema.sql",
-    "init-db": "tsx src/init-db.ts"
+    "init-db": "tsx src/init-db.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1"

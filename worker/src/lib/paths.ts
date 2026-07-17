@@ -1,5 +1,5 @@
-import path from 'node:path';
 import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 
 /** data ルート（DB_PATH の親）。Tier1/Tier2/ジョブ入出力の実体を置く。 */
 export const DATA_DIR = process.env.DATA_DIR || path.dirname(process.env.DB_PATH || '/data/harness.db');

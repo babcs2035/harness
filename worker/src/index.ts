@@ -1,10 +1,10 @@
 // worker: jobs テーブルをポーリングして直列実行する常駐ループ。
 // レート枠と DB 競合を単純化するため同時 1 ジョブ。
 import { getDb } from '@harness/shared';
-import { runCollect } from './jobs/collect.js';
 import { runAnalyze } from './jobs/analyze.js';
 import { runApply, runRollback } from './jobs/apply.js';
 import { runCleanup } from './jobs/cleanup.js';
+import { runCollect } from './jobs/collect.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
 
@@ -55,7 +55,10 @@ async function runOne(db: ReturnType<typeof getDb>): Promise<boolean> {
   console.log(`[worker] job#${job.id} ${job.type} 開始`);
   try {
     const log = await dispatch(job);
-    db.prepare("UPDATE jobs SET status='done', finished_at=datetime('now'), log=? WHERE id=?").run(log, job.id);
+    db.prepare("UPDATE jobs SET status='done', finished_at=datetime('now'), log=? WHERE id=?").run(
+      log,
+      job.id,
+    );
     console.log(`[worker] job#${job.id} 完了: ${log}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

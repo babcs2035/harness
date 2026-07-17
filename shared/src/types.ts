@@ -96,18 +96,17 @@ export interface ClaudeResult {
   structured_output?: unknown;
 }
 
-export type JobType =
-  | 'collect'
-  | 'ingest'
-  | 'analyze'
-  | 'apply'
-  | 'rollback'
-  | 'cleanup';
+export type JobType = 'collect' | 'ingest' | 'analyze' | 'apply' | 'rollback' | 'cleanup';
 
 export interface JobPayloadMap {
   collect: { machine_id: number; full_resync?: boolean };
   ingest: { machine_id: number; increment_path: string };
-  analyze: { kind: string; scope: 'global' | 'machine' | 'project'; machine_id?: number; project_id?: number };
+  analyze: {
+    kind: string;
+    scope: 'global' | 'machine' | 'project';
+    machine_id?: number;
+    project_id?: number;
+  };
   apply: { proposal_id: number; edited_content?: string };
   rollback: { apply_log_id: number };
   cleanup: Record<string, never>;

@@ -59,7 +59,11 @@ export default function DriftPage() {
       <p className="muted" style={{ marginTop: -8 }}>
         端末間で内容が分岐した CLAUDE.md / skills / memory を検出します（同じ hash＝一致）。
       </p>
-      {msg && <div className="panel" style={{ marginBottom: 16 }}>{msg}</div>}
+      {msg && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          {msg}
+        </div>
+      )}
 
       <div className="panel">
         <table>
@@ -89,7 +93,7 @@ export default function DriftPage() {
                 ))}
                 <td>
                   {k.diverged && (
-                    <button className="secondary" onClick={() => resolve(k.key)}>
+                    <button type="button" className="secondary" onClick={() => resolve(k.key)}>
                       統合案を生成
                     </button>
                   )}

@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getDb } from '@harness/shared';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,10 +17,14 @@ export function GET() {
     )
     .all();
   const jobs = db
-    .prepare('SELECT id, type, status, error_kind, acknowledged, created_at, finished_at, log, cost_usd FROM jobs ORDER BY id DESC LIMIT 50')
+    .prepare(
+      'SELECT id, type, status, error_kind, acknowledged, created_at, finished_at, log, cost_usd FROM jobs ORDER BY id DESC LIMIT 50',
+    )
     .all();
   const failedUnacked = (
-    db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='failed' AND acknowledged=0").get() as { n: number }
+    db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='failed' AND acknowledged=0").get() as {
+      n: number;
+    }
   ).n;
   return NextResponse.json({ applyLogs, jobs, failedUnacked });
 }

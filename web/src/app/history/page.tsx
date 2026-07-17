@@ -52,13 +52,16 @@ export default function HistoryPage() {
     }
   }
 
-  const badge = (s: string) =>
-    s === 'done' ? 'badge ok' : s === 'failed' ? 'badge err' : 'badge';
+  const badge = (s: string) => (s === 'done' ? 'badge ok' : s === 'failed' ? 'badge err' : 'badge');
 
   return (
     <div>
       <h2>History</h2>
-      {msg && <div className="panel" style={{ marginBottom: 16 }}>{msg}</div>}
+      {msg && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          {msg}
+        </div>
+      )}
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <h3>適用履歴</h3>
@@ -79,7 +82,8 @@ export default function HistoryPage() {
               <tr key={a.id}>
                 <td>{a.id}</td>
                 <td title={a.target_path}>
-                  <span className="badge">{a.proposal_type}</span> {a.target_path.split('/').slice(-2).join('/')}
+                  <span className="badge">{a.proposal_type}</span>{' '}
+                  {a.target_path.split('/').slice(-2).join('/')}
                 </td>
                 <td>{a.machine}</td>
                 <td className="muted">{shortTime(a.applied_at)}</td>
@@ -90,12 +94,16 @@ export default function HistoryPage() {
                     <span className="badge ok">applied</span>
                   )}
                 </td>
-                <td className="muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={a.backup_path ?? ''}>
+                <td
+                  className="muted"
+                  style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  title={a.backup_path ?? ''}
+                >
                   {a.backup_path?.split('/').slice(-1)[0] ?? '-'}
                 </td>
                 <td>
                   {!a.rolled_back_at && (
-                    <button className="secondary" onClick={() => rollback(a.id)}>
+                    <button type="button" className="secondary" onClick={() => rollback(a.id)}>
                       ロールバック
                     </button>
                   )}
@@ -137,7 +145,11 @@ export default function HistoryPage() {
                 </td>
                 <td className="num">{j.cost_usd ? `$${j.cost_usd.toFixed(3)}` : '-'}</td>
                 <td className="muted">{shortTime(j.finished_at)}</td>
-                <td className="muted" style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }} title={j.log ?? ''}>
+                <td
+                  className="muted"
+                  style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  title={j.log ?? ''}
+                >
                   {j.log ?? ''}
                 </td>
               </tr>

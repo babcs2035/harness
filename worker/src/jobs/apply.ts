@@ -1,6 +1,6 @@
-import { getDb } from '@harness/shared';
 import type { ApplyInput } from '@harness/shared';
-import { runRemoteApply, runRemoteRollback, type Machine } from '../ssh.js';
+import { getDb } from '@harness/shared';
+import { type Machine, runRemoteApply, runRemoteRollback } from '../ssh.js';
 
 interface ProposalRow {
   id: number;
@@ -15,7 +15,9 @@ interface ProposalRow {
 /** 承認済み提案を対象端末に適用する。edited_content があればそれを優先（編集して Accept）。 */
 export async function runApply(payload: { proposal_id: number; edited_content?: string }): Promise<string> {
   const db = getDb();
-  const prop = db.prepare('SELECT * FROM proposals WHERE id=?').get(payload.proposal_id) as ProposalRow | undefined;
+  const prop = db.prepare('SELECT * FROM proposals WHERE id=?').get(payload.proposal_id) as
+    | ProposalRow
+    | undefined;
   if (!prop) throw new Error(`proposal#${payload.proposal_id} が存在しません`);
   const machine = db.prepare('SELECT * FROM machines WHERE id=?').get(prop.machine_id) as Machine | undefined;
   if (!machine) throw new Error(`machine#${prop.machine_id} が存在しません`);
@@ -43,9 +45,12 @@ export async function runApply(payload: { proposal_id: number; edited_content?: 
     db.prepare("UPDATE proposals SET status='failed', decided_at=? WHERE id=?").run(now, prop.id);
     throw new Error(`適用失敗: ${result.error}`);
   }
-  db.prepare(
-    'INSERT INTO apply_logs(proposal_id, backup_path, result, applied_at) VALUES(?, ?, ?, ?)',
-  ).run(prop.id, result.backup_path ?? null, JSON.stringify(result), now);
+  db.prepare('INSERT INTO apply_logs(proposal_id, backup_path, result, applied_at) VALUES(?, ?, ?, ?)').run(
+    prop.id,
+    result.backup_path ?? null,
+    JSON.stringify(result),
+    now,
+  );
   db.prepare("UPDATE proposals SET status='applied', decided_at=? WHERE id=?").run(now, prop.id);
   return `proposal#${prop.id} を ${machine.name}:${prop.target_path} に適用（backup=${result.backup_path}）`;
 }
@@ -57,7 +62,9 @@ export async function runRollback(payload: { apply_log_id: number }): Promise<st
     | { id: number; proposal_id: number; backup_path: string }
     | undefined;
   if (!log) throw new Error(`apply_log#${payload.apply_log_id} が存在しません`);
-  const prop = db.prepare('SELECT * FROM proposals WHERE id=?').get(log.proposal_id) as ProposalRow | undefined;
+  const prop = db.prepare('SELECT * FROM proposals WHERE id=?').get(log.proposal_id) as
+    | ProposalRow
+    | undefined;
   if (!prop) throw new Error('提案が見つかりません');
   const machine = db.prepare('SELECT * FROM machines WHERE id=?').get(prop.machine_id) as Machine | undefined;
   if (!machine) throw new Error('端末が見つかりません');

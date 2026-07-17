@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getDb } from '@harness/shared';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,9 @@ export function GET(req: Request) {
 
   // ダッシュボードの未確認失敗バッジ用
   const failedUnacked = (
-    db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='failed' AND acknowledged=0").get() as { n: number }
+    db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='failed' AND acknowledged=0").get() as {
+      n: number;
+    }
   ).n;
 
   return NextResponse.json({ jobs, failedUnacked });

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
 /** 失敗ジョブの未確認件数をサイドバーに表示する（ダッシュボード通知）。 */
@@ -26,7 +26,11 @@ export default function FailedBadge() {
 
   if (n <= 0) return null;
   return (
-    <Link href="/history" className="badge err" style={{ display: 'block', marginTop: 12, textAlign: 'center' }}>
+    <Link
+      href="/history"
+      className="badge err"
+      style={{ display: 'block', marginTop: 12, textAlign: 'center' }}
+    >
       失敗ジョブ {n} 件（未確認）
     </Link>
   );

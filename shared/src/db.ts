@@ -1,6 +1,6 @@
-import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 
 let singleton: Database.Database | null = null;
 

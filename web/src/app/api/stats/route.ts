@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getDb } from '@harness/shared';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,10 +16,22 @@ export function GET(req: Request) {
   // stats_daily 用の条件（テーブル別名なし）
   const w: string[] = [];
   const p: Record<string, unknown> = {};
-  if (from) { w.push('date >= @from'); p.from = from; }
-  if (to) { w.push('date <= @to'); p.to = to; }
-  if (machine) { w.push('machine_id = @machine'); p.machine = Number(machine); }
-  if (project) { w.push('project_id = @project'); p.project = Number(project); }
+  if (from) {
+    w.push('date >= @from');
+    p.from = from;
+  }
+  if (to) {
+    w.push('date <= @to');
+    p.to = to;
+  }
+  if (machine) {
+    w.push('machine_id = @machine');
+    p.machine = Number(machine);
+  }
+  if (project) {
+    w.push('project_id = @project');
+    p.project = Number(project);
+  }
   const cond = w.length ? `WHERE ${w.join(' AND ')}` : '';
 
   const daily = db

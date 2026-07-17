@@ -13,6 +13,12 @@ docker compose up --build web
 docker compose up --build
 ```
 
+`CLAUDE_CODE_OAUTH_TOKEN` が未設定のままだと，worker 上の `claude` CLI が `Not logged in` で
+`analyze` ジョブを失敗させる（Hub は keychain が無いため，ローカル macOS のような fallback が効かない）．
+`claude setup-token` で発行した値を `.env` の `CLAUDE_CODE_OAUTH_TOKEN=` に設定してから
+`docker compose up -d` （または push による再デプロイ）で反映する．
+`grep CLAUDE_CODE_OAUTH_TOKEN .env` で行の有無だけ確認できる（値は表示しないこと）．
+
 - `web` コンテナは 127.0.0.1 のみに publish する．外部到達はホストの nginx 経由のみである．
 - worker コンテナは分析用 Claude Code CLI と openssh-client を同梱し，`prompts/` と `agent/` を読み取り専用でマウントする．
 

@@ -31,7 +31,9 @@ function main(): void {
     for (const m of machines)
       enqueue('analyze', { kind: 'claude-md-improve', scope: 'global', machine_id: m.id });
     enqueue('cleanup', {});
-    console.log(`daily: ${machines.length} 端末の collect→digest-fold→claude-md-improve と cleanup を投入`);
+    console.log(
+      `daily: enqueued collect/digest-fold/claude-md-improve for ${machines.length} machines, plus cleanup`,
+    );
     return;
   }
 

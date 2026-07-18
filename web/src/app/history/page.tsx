@@ -1,8 +1,12 @@
 'use client';
 
+import { Button, Card, Table, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { shortTime } from '@/lib/format';
+
+const { Title, Text } = Typography;
 
 interface ApplyLog {
   id: number;
@@ -52,111 +56,131 @@ export default function HistoryPage() {
     }
   }
 
-  const badge = (s: string) => (s === 'done' ? 'badge ok' : s === 'failed' ? 'badge err' : 'badge');
+  const statusTag = (s: string, kind?: string) => {
+    if (s === 'done') return <Tag color="green">{s}</Tag>;
+    if (s === 'failed')
+      return (
+        <Tag color="red">
+          {s}
+          {kind ? ` (${kind})` : ''}
+        </Tag>
+      );
+    return <Tag>{s}</Tag>;
+  };
+
+  const applyColumns: ColumnsType<ApplyLog> = [
+    { title: '#', dataIndex: 'id', key: 'id', width: 60 },
+    {
+      title: '対象',
+      key: 'target',
+      render: (_, r) => (
+        <span>
+          <Tag>{r.proposal_type}</Tag> {r.target_path.split('/').slice(-2).join('/')}
+        </span>
+      ),
+    },
+    { title: '端末', dataIndex: 'machine', key: 'machine' },
+    {
+      title: '適用',
+      dataIndex: 'applied_at',
+      key: 'applied_at',
+      render: (v) => <Text type="secondary">{shortTime(v)}</Text>,
+    },
+    {
+      title: '状態',
+      dataIndex: 'rolled_back_at',
+      key: 'status',
+      width: 120,
+      render: (_, r) =>
+        r.rolled_back_at ? <Tag color="orange">rolled back</Tag> : <Tag color="green">applied</Tag>,
+    },
+    {
+      title: 'バックアップ',
+      dataIndex: 'backup_path',
+      key: 'backup',
+      width: 200,
+      ellipsis: true,
+      render: (v) => v?.split('/').slice(-1)[0] ?? '-',
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 120,
+      render: (_, r) =>
+        !r.rolled_back_at ? (
+          <Button size="small" onClick={() => rollback(r.id)}>
+            ロールバック
+          </Button>
+        ) : null,
+    },
+  ];
+
+  const jobColumns: ColumnsType<Job> = [
+    { title: '#', dataIndex: 'id', key: 'id', width: 60 },
+    { title: '種別', dataIndex: 'type', key: 'type', width: 100 },
+    {
+      title: '状態',
+      dataIndex: 'status',
+      key: 'status',
+      width: 140,
+      render: (_, r) => statusTag(r.status, r.error_kind ?? undefined),
+    },
+    {
+      title: 'コスト',
+      dataIndex: 'cost_usd',
+      key: 'cost_usd',
+      width: 80,
+      align: 'right',
+      render: (v) => (v ? `$${v.toFixed(3)}` : '-'),
+    },
+    {
+      title: '完了',
+      dataIndex: 'finished_at',
+      key: 'finished_at',
+      render: (v) => <Text type="secondary">{shortTime(v)}</Text>,
+    },
+    { title: 'ログ', dataIndex: 'log', key: 'log', ellipsis: true, render: (v) => v ?? '' },
+  ];
 
   return (
     <div>
-      <h2>History</h2>
+      <Title level={2} style={{ margin: '0 0 18px' }}>
+        History
+      </Title>
+
       {msg && (
-        <div className="panel" style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+          }}
+        >
           {msg}
         </div>
       )}
 
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <h3>適用履歴</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>対象</th>
-              <th>端末</th>
-              <th>適用</th>
-              <th>状態</th>
-              <th>バックアップ</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {applyLogs.map((a) => (
-              <tr key={a.id}>
-                <td>{a.id}</td>
-                <td title={a.target_path}>
-                  <span className="badge">{a.proposal_type}</span>{' '}
-                  {a.target_path.split('/').slice(-2).join('/')}
-                </td>
-                <td>{a.machine}</td>
-                <td className="muted">{shortTime(a.applied_at)}</td>
-                <td>
-                  {a.rolled_back_at ? (
-                    <span className="badge warn">rolled back</span>
-                  ) : (
-                    <span className="badge ok">applied</span>
-                  )}
-                </td>
-                <td
-                  className="muted"
-                  style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                  title={a.backup_path ?? ''}
-                >
-                  {a.backup_path?.split('/').slice(-1)[0] ?? '-'}
-                </td>
-                <td>
-                  {!a.rolled_back_at && (
-                    <button type="button" className="secondary" onClick={() => rollback(a.id)}>
-                      ロールバック
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {applyLogs.length === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">
-                  適用履歴はまだありません。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <Card style={{ marginBottom: 16 }}>
+        <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+          適用履歴
+        </Title>
+        <Table<ApplyLog>
+          dataSource={applyLogs}
+          columns={applyColumns}
+          rowKey="id"
+          pagination={false}
+          locale={{ emptyText: '適用履歴はまだありません。' }}
+        />
+      </Card>
 
-      <div className="panel">
-        <h3>ジョブログ</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>種別</th>
-              <th>状態</th>
-              <th>コスト</th>
-              <th>完了</th>
-              <th>ログ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((j) => (
-              <tr key={j.id}>
-                <td>{j.id}</td>
-                <td>{j.type}</td>
-                <td>
-                  <span className={badge(j.status)}>{j.status}</span>
-                  {j.error_kind && <span className="muted"> ({j.error_kind})</span>}
-                </td>
-                <td className="num">{j.cost_usd ? `$${j.cost_usd.toFixed(3)}` : '-'}</td>
-                <td className="muted">{shortTime(j.finished_at)}</td>
-                <td
-                  className="muted"
-                  style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                  title={j.log ?? ''}
-                >
-                  {j.log ?? ''}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+          ジョブログ
+        </Title>
+        <Table<Job> dataSource={jobs} columns={jobColumns} rowKey="id" pagination={false} />
+      </Card>
     </div>
   );
 }

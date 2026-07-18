@@ -9,7 +9,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const db = getDb();
   const log = db.prepare('SELECT id FROM apply_logs WHERE id=?').get(Number(id));
-  if (!log) return NextResponse.json({ error: 'apply_log が存在しません' }, { status: 404 });
+  if (!log) return NextResponse.json({ error: 'apply_log not found' }, { status: 404 });
   const r = db
     .prepare(
       "INSERT INTO jobs(type, payload, status, created_at) VALUES('rollback', ?, 'queued', datetime('now'))",

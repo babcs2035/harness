@@ -23,12 +23,13 @@ export function runCleanup(): string {
   const tx = db.transaction(() => {
     for (const r of rows) {
       const ref = others.get(r.file_path, r.id) as { n: number };
-      if (ref.n === 0 && r.file_path && fs.existsSync(r.file_path)) {
+      if (ref.n === 0 && r.file_path) {
         try {
           fs.rmSync(r.file_path);
           filesDeleted++;
         } catch {
-          /* ファイル削除失敗は無視（索引は消す） */
+          /* ファイル削除の失敗は無視する（索引は消す） */
+          /* fs.existsSync チェックを削除: TOCTOU 競合を防ぐため、存在確認なしで直接削除を試みる */
         }
       }
       del.run(r.id);
@@ -36,5 +37,5 @@ export function runCleanup(): string {
     }
   });
   tx();
-  return `cleanup: Tier1 索引 ${removed} 件・増分ファイル ${filesDeleted} 件を削除`;
+  return `cleanup: deleted ${removed} tier1 index rows, ${filesDeleted} increment files`;
 }

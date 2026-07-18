@@ -175,7 +175,7 @@ jobs:
             set -a; [ -f .env ] && . ./.env; set +a
             SSH_KEY_PATH="${HARNESS_SSH_KEY:-secrets/ssh_key}"
             if [ ! -f "$SSH_KEY_PATH" ]; then
-              echo "SSH 鍵ファイルが見つかりません（ファイルとして未配置、または誤ってディレクトリ化しています）: $SSH_KEY_PATH" >&2
+              echo "SSH key file not found (missing, or accidentally turned into a directory): $SSH_KEY_PATH" >&2
               exit 1
             fi
             # worker はコンテナ内 uid 1000（node）で :ro マウントを読むため、

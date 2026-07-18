@@ -1,8 +1,11 @@
 'use client';
 
+import { Button, Card, Select, Space, Table, Typography } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { shortTime } from '@/lib/format';
+
+const { Title, Text } = Typography;
 
 interface Proposal {
   id: number;
@@ -29,12 +32,26 @@ interface Pattern {
   status: string;
 }
 
+const ANALYZE_KINDS = [
+  { key: 'digest-fold', label: 'digest-fold（増分の折り畳み）' },
+  { key: 'claude-md-improve', label: 'CLAUDE.md 改善案' },
+  { key: 'skill-gen', label: 'skill 生成' },
+  { key: 'refactor-scope', label: 'スコープ再編' },
+];
+
+const MODELS = [
+  { key: '', label: '既定モデル' },
+  { key: 'claude-opus-4-8', label: 'Opus 4.8' },
+  { key: 'claude-sonnet-5', label: 'Sonnet 5' },
+  { key: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
+];
+
 function DiffView({ diff }: { diff: string }) {
   const lines = diff.split('\n');
   return (
     <pre style={{ margin: 0, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}>
       {lines.map((l, i) => {
-        let color = 'var(--fg)';
+        let color = '#e6edf3';
         let bg = 'transparent';
         if (l.startsWith('+') && !l.startsWith('+++')) {
           color = '#56d364';
@@ -45,11 +62,11 @@ function DiffView({ diff }: { diff: string }) {
         } else if (l.startsWith('@@')) {
           color = '#8957e5';
         } else if (l.startsWith('+++') || l.startsWith('---')) {
-          color = 'var(--muted)';
+          color = '#8b949e';
         }
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: diff 行は同一内容が繰り返されうるため行番号以外に安定した key を持たない
-          <div key={i} style={{ color, background: bg, whiteSpace: 'pre-wrap' }}>
+          <div key={`diff-${i}`} style={{ color, background: bg, whiteSpace: 'pre-wrap' }}>
             {l || ' '}
           </div>
         );
@@ -63,6 +80,8 @@ export default function ProposalsPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [selMachine, setSelMachine] = useState<number | null>(null);
+  const [selKind, setSelKind] = useState(ANALYZE_KINDS[0]?.key ?? '');
+  const [selModel, setSelModel] = useState(MODELS[0]?.key ?? '');
   const [msg, setMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<number, string | undefined>>({});
 
@@ -82,7 +101,7 @@ export default function ProposalsPage() {
     });
   }, [reload]);
 
-  async function analyze(kind: string) {
+  async function analyze() {
     if (!selMachine) {
       setMsg('端末を選択してください');
       return;
@@ -91,9 +110,12 @@ export default function ProposalsPage() {
     try {
       await api('/api/jobs', {
         method: 'POST',
-        body: JSON.stringify({ type: 'analyze', payload: { kind, scope: 'global', machine_id: selMachine } }),
+        body: JSON.stringify({
+          type: 'analyze',
+          payload: { kind: selKind, scope: 'global', machine_id: selMachine, model: selModel || undefined },
+        }),
       });
-      setMsg(`分析ジョブ(${kind})を投入しました。worker 完了後にここへ提案が出ます（数分後に再読込）。`);
+      setMsg(`分析ジョブ(${selKind})を投入しました。worker 完了後にここへ提案が出ます（数分後に再読込）。`);
     } catch (e) {
       setMsg(`投入失敗: ${e instanceof Error ? e.message : e}`);
     }
@@ -125,69 +147,99 @@ export default function ProposalsPage() {
 
   return (
     <div>
-      <h2>Proposals</h2>
-      <div className="toolbar">
-        <span className="muted">分析対象:</span>
-        <select value={selMachine ?? ''} onChange={(e) => setSelMachine(Number(e.target.value))}>
-          {machines.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="secondary" onClick={() => analyze('digest-fold')}>
-          digest-fold 実行
-        </button>
-        <button type="button" onClick={() => analyze('claude-md-improve')}>
-          CLAUDE.md 改善案
-        </button>
-        <button type="button" onClick={() => analyze('skill-gen')}>
-          skill 生成
-        </button>
-        <button type="button" onClick={() => analyze('refactor-scope')}>
-          スコープ再編
-        </button>
-        <button type="button" className="secondary" onClick={reload}>
-          再読込
-        </button>
-      </div>
+      <Title level={2} style={{ margin: '0 0 18px' }}>
+        Proposals
+      </Title>
+
+      <Card style={{ marginBottom: 16 }}>
+        <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+          分析を実行
+        </Title>
+        <Space wrap style={{ marginBottom: 0 }}>
+          <Space>
+            <Text type="secondary">対象端末</Text>
+            <Select
+              value={selMachine ?? undefined}
+              onChange={(v) => setSelMachine(v)}
+              style={{ width: 160 }}
+              placeholder="端末選択"
+              options={machines.map((m) => ({ value: m.id, label: m.name }))}
+            />
+          </Space>
+          <Space>
+            <Text type="secondary">分析種別</Text>
+            <Select
+              value={selKind}
+              onChange={setSelKind}
+              style={{ width: 200 }}
+              options={ANALYZE_KINDS.map((k) => ({ value: k.key, label: k.label }))}
+            />
+          </Space>
+          <Space>
+            <Text type="secondary">モデル</Text>
+            <Select
+              value={selModel}
+              onChange={setSelModel}
+              style={{ width: 140 }}
+              options={MODELS.map((m) => ({ value: m.key, label: m.label }))}
+            />
+          </Space>
+          <Button type="primary" onClick={analyze}>
+            実行
+          </Button>
+          <Button onClick={reload}>再読込</Button>
+        </Space>
+      </Card>
 
       {msg && (
-        <div className="panel" style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+          }}
+        >
           {msg}
         </div>
       )}
 
       {patterns.length > 0 && (
-        <div className="panel" style={{ marginBottom: 16 }}>
-          <h3>繰り返しパターン候補（digest-fold 由来・改善の種）</h3>
-          <table>
-            <thead>
-              <tr>
-                <th className="num">出現</th>
-                <th>説明</th>
-                <th>状態</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patterns.slice(0, 15).map((p) => (
-                <tr key={p.id}>
-                  <td className="num">{p.count}</td>
-                  <td>{p.description}</td>
-                  <td>
-                    <span className="badge">{p.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <Card style={{ marginBottom: 16 }}>
+          <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+            繰り返しパターン候補（digest-fold 由来・改善の種）
+          </Title>
+          <Table
+            dataSource={patterns.slice(0, 15)}
+            rowKey="id"
+            pagination={false}
+            size="small"
+            columns={[
+              { title: '出現', dataIndex: 'count', key: 'count', width: 80, align: 'right' },
+              { title: '説明', dataIndex: 'description', key: 'description' },
+              { title: '状態', dataIndex: 'status', key: 'status', width: 100 },
+            ]}
+          />
+        </Card>
+      )}
+
+      {proposals.length === 0 && (
+        <div
+          style={{
+            padding: 12,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            color: '#8b949e',
+          }}
+        >
+          保留中の提案はありません。
         </div>
       )}
 
-      {proposals.length === 0 && <div className="panel muted">保留中の提案はありません。</div>}
-
       {proposals.map((p) => (
-        <div className="panel" key={p.id} style={{ marginBottom: 16 }}>
+        <Card key={p.id} style={{ marginBottom: 16 }}>
           <div
             style={{
               display: 'flex',
@@ -197,15 +249,26 @@ export default function ProposalsPage() {
             }}
           >
             <div>
-              <span className="badge">{p.type}</span> <strong>{p.target_path}</strong>{' '}
-              <span className="muted">@ {p.machine}</span>
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  border: '1px solid #30363d',
+                  background: 'rgba(68,147,248,0.15)',
+                  color: '#4493f8',
+                }}
+              >
+                {p.type}
+              </span>{' '}
+              <strong>{p.target_path}</strong> <Text type="secondary">@ {p.machine}</Text>
             </div>
-            <span className="muted">{shortTime(p.created_at)}</span>
+            <Text type="secondary">{shortTime(p.created_at)}</Text>
           </div>
 
           {p.rationale && (
             <details style={{ marginBottom: 10 }}>
-              <summary className="muted">変更理由</summary>
+              <summary style={{ color: '#8b949e', fontSize: 13, cursor: 'pointer' }}>変更理由</summary>
               <pre style={{ whiteSpace: 'pre-wrap', margin: '8px 0', fontSize: 12 }}>{p.rationale}</pre>
             </details>
           )}
@@ -213,7 +276,7 @@ export default function ProposalsPage() {
           {editing[p.id] === undefined ? (
             <div
               style={{
-                border: '1px solid var(--border)',
+                border: '1px solid #30363d',
                 borderRadius: 8,
                 padding: 10,
                 maxHeight: 400,
@@ -226,36 +289,33 @@ export default function ProposalsPage() {
             <textarea
               value={editing[p.id]}
               onChange={(e) => setEditing({ ...editing, [p.id]: e.target.value })}
-              style={{ width: '100%', minHeight: 320, fontFamily: 'monospace' }}
+              style={{
+                width: '100%',
+                minHeight: 320,
+                fontFamily: 'monospace',
+                background: '#0e1116',
+                color: '#e6edf3',
+                border: '1px solid #30363d',
+                borderRadius: 6,
+                padding: 8,
+              }}
             />
           )}
 
-          <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-            <button type="button" onClick={() => accept(p.id)}>
+          <Space style={{ marginTop: 12 }}>
+            <Button type="primary" onClick={() => accept(p.id)}>
               {editing[p.id] === undefined ? 'Accept' : 'この内容で Accept'}
-            </button>
+            </Button>
             {editing[p.id] === undefined ? (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setEditing({ ...editing, [p.id]: p.new_content })}
-              >
-                編集
-              </button>
+              <Button onClick={() => setEditing({ ...editing, [p.id]: p.new_content })}>編集</Button>
             ) : (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setEditing({ ...editing, [p.id]: undefined })}
-              >
-                編集をやめる
-              </button>
+              <Button onClick={() => setEditing({ ...editing, [p.id]: undefined })}>編集をやめる</Button>
             )}
-            <button type="button" className="secondary" onClick={() => reject(p.id)}>
+            <Button danger onClick={() => reject(p.id)}>
               Reject
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Space>
+        </Card>
       ))}
     </div>
   );

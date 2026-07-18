@@ -1,7 +1,7 @@
 # harness 開発ツールチェーンの固定（開発機・Hub・CI で共通）
 [tools]
 node = "24"
-pnpm = "11"
+pnpm = "latest"
 python = "3.12"
 
 [env]
@@ -28,6 +28,10 @@ run = "pnpm --filter @harness/shared exec tsx src/init-db.ts"
 description = "worker（ジョブランナー）をローカル起動"
 dir = "{{config_root}}/worker"
 run = "pnpm dev"
+
+[tasks.check]
+description = "format, lint, typecheck を実行"
+run = "pnpm check"
 
 [tasks.enqueue]
 description = "ジョブ手動投入。例: mise run enqueue -- daily"

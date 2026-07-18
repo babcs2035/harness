@@ -1,7 +1,8 @@
 import './globals.css';
+import { ConfigProvider } from 'antd';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import FailedBadge from '@/components/FailedBadge';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { darkTheme } from '@/styles/theme';
 
 export const metadata: Metadata = {
   title: 'harness',
@@ -21,20 +22,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <body>
-        <div className="layout">
-          <aside className="sidebar">
-            <h1>🌱 harness</h1>
-            <nav className="nav">
-              {NAV.map((n) => (
-                <Link key={n.href} href={n.href}>
-                  {n.label}
-                </Link>
-              ))}
-            </nav>
-            <FailedBadge />
-          </aside>
-          <main className="content">{children}</main>
-        </div>
+        <ConfigProvider theme={darkTheme}>
+          <ThemeProvider>
+            <div className="layout">
+              <header className="header">
+                <h1 className="logo">🌱 harness</h1>
+                <nav className="nav">
+                  {NAV.map((n) => (
+                    <a key={n.href} href={n.href}>
+                      {n.label}
+                    </a>
+                  ))}
+                </nav>
+              </header>
+              <main className="content">{children}</main>
+            </div>
+          </ThemeProvider>
+        </ConfigProvider>
       </body>
     </html>
   );

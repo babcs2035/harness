@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CollectorInput, SessionCursor } from '@harness/shared';
@@ -13,7 +14,7 @@ import { ingestIncrement } from './ingest.js';
 export async function runCollect(machineId: number, opts: { fullResync?: boolean } = {}): Promise<string> {
   const db = getDb();
   const machine = db.prepare('SELECT * FROM machines WHERE id=?').get(machineId) as Machine | undefined;
-  if (!machine) throw new Error(`machine#${machineId} が存在しません`);
+  if (!machine) throw new Error(`machine#${machineId} not found`);
 
   const cursors = db
     .prepare('SELECT file_path AS file, byte_offset, head_hash FROM cursors WHERE machine_id=?')
@@ -37,7 +38,7 @@ export async function runCollect(machineId: number, opts: { fullResync?: boolean
 
   ensureDir(INCREMENTS_DIR);
   const safeTs = (incr.machine_ts || new Date().toISOString()).replace(/[:.]/g, '-');
-  const file = path.join(INCREMENTS_DIR, `m${machineId}_${safeTs}.json`);
+  const file = path.join(INCREMENTS_DIR, `m${machineId}_${safeTs}_${randomUUID()}.json`);
   fs.writeFileSync(file, JSON.stringify(incr));
 
   const s = ingestIncrement(machineId, incr, file);

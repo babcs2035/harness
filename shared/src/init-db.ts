@@ -5,5 +5,5 @@ const db = getDb();
 const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as {
   name: string;
 }[];
-console.log(`スキーマ適用完了: ${tables.map((t) => t.name).join(', ')}`);
+console.log(`schema applied: ${tables.map((t) => t.name).join(', ')}`);
 closeDb();

@@ -1,7 +1,11 @@
 'use client';
 
+import { Button, Card, Spin, Table, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+
+const { Title, Text } = Typography;
 
 interface KeyRow {
   key: string;
@@ -34,7 +38,6 @@ export default function DriftPage() {
   async function resolve(key: string) {
     setMsg(null);
     try {
-      // drift-resolve はマシン非依存だが、投入経路の都合で任意の端末 id は不要。
       await api('/api/jobs', {
         method: 'POST',
         body: JSON.stringify({ type: 'analyze', payload: { kind: 'drift-resolve', scope: 'global', key } }),
@@ -45,71 +48,89 @@ export default function DriftPage() {
     }
   }
 
-  // 色分け: 端末ごとに hash を色に対応させ、分岐を視認しやすくする
   const hashColor = (h: string | undefined) => {
-    if (!h) return 'var(--muted)';
+    if (!h) return '#8b949e';
     let n = 0;
     for (const c of h) n = (n + c.charCodeAt(0)) % 6;
     return ['#4493f8', '#3fb950', '#d29922', '#8957e5', '#db61a2', '#39c5cf'][n];
   };
 
+  const columns: ColumnsType<KeyRow> = [
+    {
+      title: '種別',
+      dataIndex: 'kind',
+      key: 'kind',
+      width: 100,
+      render: (v) => <Tag>{v}</Tag>,
+    },
+    {
+      title: '論理キー',
+      dataIndex: 'key',
+      key: 'key',
+      render: (v, r) => (
+        <span>
+          {v} {r.diverged && <Tag color="orange">分岐</Tag>}
+        </span>
+      ),
+    },
+    ...machines.map((m) => ({
+      title: m,
+      key: m,
+      width: 100,
+      render: (r: KeyRow) => (
+        <span style={{ color: hashColor(r.cells[m]), fontFamily: 'monospace' }}>
+          {shortHash(r.cells[m]) || '—'}
+        </span>
+      ),
+    })),
+    {
+      title: '操作',
+      key: 'actions',
+      width: 140,
+      render: (r) =>
+        r.diverged ? (
+          <Button size="small" onClick={() => resolve(r.key)}>
+            統合案を生成
+          </Button>
+        ) : null,
+    },
+  ];
+
   return (
     <div>
-      <h2>Drift</h2>
-      <p className="muted" style={{ marginTop: -8 }}>
+      <Title level={2} style={{ margin: '0 0 8px' }}>
+        Drift
+      </Title>
+      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
         端末間で内容が分岐した CLAUDE.md / skills / memory を検出します（同じ hash＝一致）。
-      </p>
+      </Text>
+
       {msg && (
-        <div className="panel" style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+          }}
+        >
           {msg}
         </div>
       )}
 
-      <div className="panel">
-        <table>
-          <thead>
-            <tr>
-              <th>種別</th>
-              <th>論理キー</th>
-              {machines.map((m) => (
-                <th key={m}>{m}</th>
-              ))}
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map((k) => (
-              <tr key={k.key} style={{ background: k.diverged ? 'rgba(210,153,34,0.08)' : 'transparent' }}>
-                <td>
-                  <span className="badge">{k.kind}</span>
-                </td>
-                <td title={k.key}>
-                  {k.key} {k.diverged && <span className="badge warn">分岐</span>}
-                </td>
-                {machines.map((m) => (
-                  <td key={m} style={{ color: hashColor(k.cells[m]), fontFamily: 'monospace' }}>
-                    {shortHash(k.cells[m]) || '—'}
-                  </td>
-                ))}
-                <td>
-                  {k.diverged && (
-                    <button type="button" className="secondary" onClick={() => resolve(k.key)}>
-                      統合案を生成
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {keys.length === 0 && (
-              <tr>
-                <td colSpan={machines.length + 3} className="muted">
-                  比較対象がありません。複数端末を収集すると差分が表示されます。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <Spin spinning={!keys.length && !msg}>
+        <Card>
+          <Table<KeyRow>
+            dataSource={keys}
+            columns={columns}
+            rowKey="key"
+            pagination={false}
+            locale={{ emptyText: '比較対象がありません。複数端末を収集すると差分が表示されます。' }}
+            rowClassName={(r) => (r.diverged ? 'diverged' : '')}
+          />
+        </Card>
+      </Spin>
     </div>
   );
 }

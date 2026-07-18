@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@harness/shared": "workspace:*",
+    "antd": "^6.5.1",
     "better-sqlite3": "^12.11.1",
     "next": "^16.2.10",
     "react": "^19.2.7",

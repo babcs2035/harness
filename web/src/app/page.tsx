@@ -1,5 +1,6 @@
 'use client';
 
+import { Card, Col, DatePicker, Row, Select, Space, Statistic, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   Bar,
@@ -16,6 +17,8 @@ import {
 } from 'recharts';
 import { api } from '@/lib/api';
 import { comma, compact } from '@/lib/format';
+
+const { Title, Text } = Typography;
 
 interface Daily {
   date: string;
@@ -45,7 +48,6 @@ const RANGES = [
   { key: 'all', label: '全期間', days: 0 },
 ];
 
-// カテゴリカル配色（暗背景で識別しやすい・一貫使用）
 const COLORS = {
   output: '#3fb950',
   input: '#4493f8',
@@ -61,108 +63,228 @@ function fromDate(days: number): string | undefined {
   return d.toISOString().slice(0, 10);
 }
 
-const tooltipStyle = {
-  background: '#161b22',
-  border: '1px solid #30363d',
-  borderRadius: 8,
-  fontSize: 12,
-};
-
 export default function OverviewPage() {
   const [range, setRange] = useState('30d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [data, setData] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isCustom = !!(customFrom || customTo);
 
   useEffect(() => {
-    const days = RANGES.find((r) => r.key === range)?.days ?? 30;
-    const from = fromDate(days);
-    const qs = from ? `?from=${from}` : '';
+    const qs = new URLSearchParams();
+    if (isCustom) {
+      if (customFrom) qs.set('from', customFrom);
+      if (customTo) qs.set('to', customTo);
+    } else {
+      const days = RANGES.find((r) => r.key === range)?.days ?? 30;
+      const from = fromDate(days);
+      if (from) qs.set('from', from);
+    }
+    const qsStr = qs.toString();
     setData(null);
     setError(null);
-    api<StatsResponse>(`/api/stats${qs}`)
+    api<StatsResponse>(`/api/stats${qsStr ? `?${qsStr}` : ''}`)
       .then(setData)
       .catch((e) => setError(String(e.message ?? e)));
-  }, [range]);
+  }, [range, customFrom, customTo, isCustom]);
+
+  function selectRange(key: string) {
+    setCustomFrom('');
+    setCustomTo('');
+    setRange(key);
+  }
 
   return (
     <div>
-      <h2>Overview</h2>
-      <div className="toolbar">
-        {RANGES.map((r) => (
-          <button
-            type="button"
-            key={r.key}
-            className={r.key === range ? '' : 'secondary'}
-            onClick={() => setRange(r.key)}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+      <Title level={2} style={{ margin: '0 0 18px' }}>
+        Overview
+      </Title>
 
-      {error && <div className="panel badge err">読み込みエラー: {error}</div>}
-      {!data && !error && <div className="panel muted">読み込み中…</div>}
+      <Space wrap style={{ marginBottom: 16 }}>
+        {RANGES.map((r) => (
+          <Select
+            key={r.key}
+            value={r.key === range && !isCustom ? r.key : undefined}
+            onChange={() => selectRange(r.key)}
+            style={{ width: 120 }}
+            options={[{ value: r.key, label: r.label }]}
+          />
+        ))}
+        <Text style={{ color: '#8b949e' }}>または期間指定:</Text>
+        <DatePicker
+          value={customFrom ? new Date(customFrom) : null}
+          onChange={(d) => setCustomFrom(d?.toISOString().slice(0, 10) ?? '')}
+          format="YYYY-MM-DD"
+        />
+        <Text style={{ color: '#8b949e' }}>〜</Text>
+        <DatePicker
+          value={customTo ? new Date(customTo) : null}
+          onChange={(d) => setCustomTo(d?.toISOString().slice(0, 10) ?? '')}
+          format="YYYY-MM-DD"
+        />
+      </Space>
+
+      {error && (
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: 'rgba(248,81,73,0.15)',
+            border: '1px solid #f85149',
+            borderRadius: 6,
+            color: '#ff7b72',
+          }}
+        >
+          読み込みエラー: {error}
+        </div>
+      )}
+      {!data && !error && (
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            color: '#8b949e',
+          }}
+        >
+          読み込み中…
+        </div>
+      )}
 
       {data && (
         <>
-          <div className="stat-row">
-            <Stat label="Output トークン" value={compact(data.totals.output_tokens)} />
-            <Stat label="Input トークン" value={compact(data.totals.input_tokens)} />
-            <Stat label="Cache 作成" value={compact(data.totals.cache_creation)} />
-            <Stat label="Cache 読取" value={compact(data.totals.cache_read)} />
-            <Stat label="アシスタント応答数" value={comma(data.totals.messages)} />
-          </div>
+          <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
+            <Col span={4}>
+              <Card>
+                <Statistic
+                  title="Output トークン"
+                  value={compact(data.totals.output_tokens)}
+                  valueStyle={{ fontSize: 22 }}
+                />
+              </Card>
+            </Col>
+            <Col span={4}>
+              <Card>
+                <Statistic
+                  title="Input トークン"
+                  value={compact(data.totals.input_tokens)}
+                  valueStyle={{ fontSize: 22 }}
+                />
+              </Card>
+            </Col>
+            <Col span={4}>
+              <Card>
+                <Statistic
+                  title="Cache 作成"
+                  value={compact(data.totals.cache_creation)}
+                  valueStyle={{ fontSize: 22 }}
+                />
+              </Card>
+            </Col>
+            <Col span={4}>
+              <Card>
+                <Statistic
+                  title="Cache 読取"
+                  value={compact(data.totals.cache_read)}
+                  valueStyle={{ fontSize: 22 }}
+                />
+              </Card>
+            </Col>
+            <Col span={4}>
+              <Card>
+                <Statistic
+                  title="アシスタント応答数"
+                  value={comma(data.totals.messages)}
+                  valueStyle={{ fontSize: 22 }}
+                />
+              </Card>
+            </Col>
+          </Row>
 
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <div className="panel">
-              <h3>日別トークン（input / output / cache 作成）</h3>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={data.daily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(d) => String(d).slice(5)}
-                    stroke="#8b949e"
-                    fontSize={11}
-                  />
-                  <YAxis tickFormatter={compact} stroke="#8b949e" fontSize={11} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => comma(Number(v))} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="output_tokens" name="output" stackId="t" fill={COLORS.output} />
-                  <Bar dataKey="input_tokens" name="input" stackId="t" fill={COLORS.input} />
-                  <Bar dataKey="cache_creation" name="cache作成" stackId="t" fill={COLORS.cache_creation} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <Row gutter={[16, 16]} style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <Col span={12}>
+              <Card>
+                <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+                  日別トークン（input / output / cache 作成）
+                </Title>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={data.daily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => String(d).slice(5)}
+                      stroke="#8b949e"
+                      fontSize={11}
+                    />
+                    <YAxis tickFormatter={compact} stroke="#8b949e" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#161b22',
+                        border: '1px solid #30363d',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: '#e6edf3',
+                      }}
+                      labelStyle={{ color: '#e6edf3' }}
+                      itemStyle={{ color: '#e6edf3' }}
+                      formatter={(v) => comma(Number(v))}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="output_tokens" name="output" stackId="t" fill={COLORS.output} />
+                    <Bar dataKey="input_tokens" name="input" stackId="t" fill={COLORS.input} />
+                    <Bar dataKey="cache_creation" name="cache作成" stackId="t" fill={COLORS.cache_creation} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+            </Col>
 
-            <div className="panel">
-              <h3>セッション数の推移</h3>
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={data.sessionsDaily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(d) => String(d).slice(5)}
-                    stroke="#8b949e"
-                    fontSize={11}
-                  />
-                  <YAxis allowDecimals={false} stroke="#8b949e" fontSize={11} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Line
-                    type="monotone"
-                    dataKey="sessions"
-                    name="セッション"
-                    stroke={COLORS.sessions}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+            <Col span={12}>
+              <Card>
+                <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+                  セッション数の推移
+                </Title>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={data.sessionsDaily} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => String(d).slice(5)}
+                      stroke="#8b949e"
+                      fontSize={11}
+                    />
+                    <YAxis allowDecimals={false} stroke="#8b949e" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#161b22',
+                        border: '1px solid #30363d',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: '#e6edf3',
+                      }}
+                      labelStyle={{ color: '#e6edf3' }}
+                      itemStyle={{ color: '#e6edf3' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="sessions"
+                      name="セッション"
+                      stroke={COLORS.sessions}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Card>
+            </Col>
+          </Row>
 
-          <div className="panel" style={{ marginTop: 16 }}>
-            <h3>プロジェクト別トークン（上位）</h3>
+          <Card style={{ marginTop: 16 }}>
+            <Title level={3} style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 14 }}>
+              プロジェクト別トークン（上位）
+            </Title>
             <ResponsiveContainer width="100%" height={Math.max(160, data.byProject.length * 28)}>
               <BarChart
                 layout="vertical"
@@ -172,7 +294,16 @@ export default function OverviewPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#21262d" horizontal={false} />
                 <XAxis type="number" tickFormatter={compact} stroke="#8b949e" fontSize={11} />
                 <YAxis type="category" dataKey="short" width={140} stroke="#8b949e" fontSize={11} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v) => comma(Number(v))} />
+                <Tooltip
+                  contentStyle={{
+                    background: '#161b22',
+                    border: '1px solid #30363d',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: '#e6edf3',
+                  }}
+                  formatter={(v) => comma(Number(v))}
+                />
                 <Bar dataKey="tokens" name="トークン">
                   {data.byProject.map((p, i) => (
                     <Cell key={p.project} fill={BAR_PALETTE[i % BAR_PALETTE.length]} />
@@ -180,18 +311,9 @@ export default function OverviewPage() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </Card>
         </>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="stat">
-      <div className="label">{label}</div>
-      <div className="value">{value}</div>
     </div>
   );
 }

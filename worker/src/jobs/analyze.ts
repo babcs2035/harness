@@ -14,6 +14,7 @@ export interface AnalyzePayload {
   project_id?: number;
   key?: string; // drift-resolve: 対象の論理キー（'.claude/CLAUDE.md' 等）
   job_id?: number; // 呼び出し元 jobs.id（提案に紐付ける）
+  model?: string; // 使用モデル（省略時は claude CLI の既定モデル）
 }
 
 function template(kind: string): string {
@@ -38,7 +39,7 @@ export async function runAnalyze(payload: AnalyzePayload): Promise<string> {
       case 'drift-resolve':
         return await driftResolve(payload, jobDir, inputDir, outputDir);
       default:
-        throw new Error(`未対応の analyze kind: ${payload.kind}`);
+        throw new Error(`unsupported analyze kind: ${payload.kind}`);
     }
   } finally {
     // ジョブディレクトリは使い捨て。成否に関わらず削除（増分は Tier1 に永続）。
@@ -53,7 +54,7 @@ async function digestFold(
   outputDir: string,
 ): Promise<string> {
   const incs = unconsumedTier1(payload.machine_id);
-  if (incs.length === 0) return 'digest-fold: 未消費の増分なし（スキップ）';
+  if (incs.length === 0) return 'digest-fold: no unconsumed increments, skipped';
 
   const incDir = ensureDir(path.join(inputDir, 'increments'));
   let copied = 0;
@@ -68,11 +69,11 @@ async function digestFold(
     JSON.stringify(loadDigest(payload.scope, payload.machine_id) ?? {}, null, 2),
   );
 
-  const res = await runClaude(template('digest-fold'), { cwd: jobDir, maxTurns: 30 });
-  if (!res.ok) throw new Error(`digest-fold 失敗: ${res.error}`);
+  const res = await runClaude(template('digest-fold'), { cwd: jobDir, maxTurns: 30, model: payload.model });
+  if (!res.ok) throw new Error(`digest-fold failed: ${res.error}`);
 
   const digestFile = path.join(outputDir, 'digest.json');
-  if (!fs.existsSync(digestFile)) throw new Error('digest-fold: output/digest.json が生成されませんでした');
+  if (!fs.existsSync(digestFile)) throw new Error('digest-fold: output/digest.json was not generated');
   const digest = JSON.parse(fs.readFileSync(digestFile, 'utf8'));
 
   const { id: digestId } = saveDigest(payload.scope, digest, { machineId: payload.machine_id ?? null });
@@ -91,7 +92,7 @@ async function digestFold(
     );
   }
   markTier1Consumed(incs.map((i) => i.id));
-  return `digest-fold: 増分 ${copied} 件を折り畳み（patterns=${Array.isArray(digest.patterns) ? digest.patterns.length : 0}, cost=$${res.costUsd ?? 0}）`;
+  return `digest-fold: folded ${copied} increments (patterns=${Array.isArray(digest.patterns) ? digest.patterns.length : 0}, cost=$${res.costUsd ?? 0})`;
 }
 
 async function claudeMdImprove(
@@ -101,16 +102,16 @@ async function claudeMdImprove(
   outputDir: string,
 ): Promise<string> {
   const db = getDb();
-  if (!payload.machine_id) throw new Error('claude-md-improve: machine_id が必要です');
+  if (!payload.machine_id) throw new Error('claude-md-improve: machine_id is required');
 
   // 対象 CLAUDE.md のスナップショット（グローバル or プロジェクト）
   let snap: { path: string; hash: string; content: string } | undefined;
   if (payload.scope === 'project') {
-    if (!payload.project_id) throw new Error('project スコープには project_id が必要です');
+    if (!payload.project_id) throw new Error('project_id is required for project scope');
     const proj = db.prepare('SELECT cwd FROM projects WHERE id=?').get(payload.project_id) as
       | { cwd: string }
       | undefined;
-    if (!proj) throw new Error('project が見つかりません');
+    if (!proj) throw new Error('project not found');
     snap = db
       .prepare(
         "SELECT path, hash, content FROM snapshots WHERE machine_id=? AND kind='claude_md' AND is_current=1 AND path=?",
@@ -127,8 +128,7 @@ async function claudeMdImprove(
 
   const currentContent = snap?.content ?? '';
   const targetPath = snap?.path ?? '';
-  if (!targetPath)
-    throw new Error('対象の CLAUDE.md スナップショットが見つかりません（先に収集してください）');
+  if (!targetPath) throw new Error('target CLAUDE.md snapshot not found (run collect first)');
 
   const digest =
     loadDigest(payload.scope, payload.scope === 'global' ? payload.machine_id : null) ??
@@ -140,18 +140,21 @@ async function claudeMdImprove(
     `対象スコープ: ${payload.scope}\n対象ファイル: ${targetPath}\n`,
   );
 
-  const res = await runClaude(template('claude-md-improve'), { cwd: jobDir, maxTurns: 30 });
-  if (!res.ok) throw new Error(`claude-md-improve 失敗: ${res.error}`);
+  const res = await runClaude(template('claude-md-improve'), {
+    cwd: jobDir,
+    maxTurns: 30,
+    model: payload.model,
+  });
+  if (!res.ok) throw new Error(`claude-md-improve failed: ${res.error}`);
 
   const newFile = path.join(outputDir, 'claude_md.new');
-  if (!fs.existsSync(newFile))
-    throw new Error('claude-md-improve: output/claude_md.new が生成されませんでした');
+  if (!fs.existsSync(newFile)) throw new Error('claude-md-improve: output/claude_md.new was not generated');
   const newContent = fs.readFileSync(newFile, 'utf8');
   const rationaleFile = path.join(outputDir, 'rationale.md');
   const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
 
   if (newContent.trim() === currentContent.trim()) {
-    return 'claude-md-improve: 変更提案なし（現行で十分）';
+    return 'claude-md-improve: no changes proposed (current content is sufficient)';
   }
 
   const diff = unifiedDiff(currentContent, newContent, path.basename(targetPath));
@@ -169,22 +172,29 @@ async function claudeMdImprove(
       rationale,
       payload.job_id ?? null,
     );
-  return `claude-md-improve: 提案#${Number(r.lastInsertRowid)} を作成（cost=$${res.costUsd ?? 0}）`;
+  return `claude-md-improve: created proposal#${Number(r.lastInsertRowid)} (cost=$${res.costUsd ?? 0})`;
 }
 
-/** ディレクトリ以下のファイルを {abs, rel} で再帰列挙。 */
+/** ディレクトリ以下のファイルを {abs, rel} で列挙（再帰→反復でスタックオーバーフロー防止）。 */
 function walkFiles(root: string): { abs: string; rel: string }[] {
   const acc: { abs: string; rel: string }[] = [];
-  const walk = (dir: string, prefix: string) => {
-    if (!fs.existsSync(dir)) return;
+  // 反復処理: [ディレクトリパス, プレフィックス] のスタックを使用
+  const stack: { dir: string; prefix: string }[] = [{ dir: root, prefix: '' }];
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!item) continue;
+    const { dir, prefix } = item;
+    if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
       const abs = path.join(dir, name);
       const rel = prefix ? `${prefix}/${name}` : name;
-      if (fs.statSync(abs).isDirectory()) walk(abs, rel);
-      else acc.push({ abs, rel });
+      if (fs.statSync(abs).isDirectory()) {
+        stack.push({ dir: abs, prefix: rel });
+      } else {
+        acc.push({ abs, rel });
+      }
     }
-  };
-  walk(root, '');
+  }
   return acc;
 }
 
@@ -206,9 +216,9 @@ async function skillGen(
   outputDir: string,
 ): Promise<string> {
   const db = getDb();
-  if (!payload.machine_id) throw new Error('skill-gen: machine_id が必要です');
+  if (!payload.machine_id) throw new Error('skill-gen: machine_id is required');
   const claudeDir = claudeDirOf(payload.machine_id);
-  if (!claudeDir) throw new Error('skill-gen: ~/.claude を特定できません（先に収集してください）');
+  if (!claudeDir) throw new Error('skill-gen: could not locate ~/.claude (run collect first)');
 
   fs.writeFileSync(
     path.join(inputDir, 'digest.json'),
@@ -236,15 +246,15 @@ async function skillGen(
   }
   fs.writeFileSync(path.join(inputDir, 'materials.json'), JSON.stringify(materials));
 
-  const res = await runClaude(template('skill-gen'), { cwd: jobDir, maxTurns: 40 });
-  if (!res.ok) throw new Error(`skill-gen 失敗: ${res.error}`);
+  const res = await runClaude(template('skill-gen'), { cwd: jobDir, maxTurns: 40, model: payload.model });
+  if (!res.ok) throw new Error(`skill-gen failed: ${res.error}`);
 
   const skillsOut = path.join(outputDir, 'skills');
   const files = walkFiles(skillsOut).map((f) => ({
     rel_path: f.rel,
     content: fs.readFileSync(f.abs, 'utf8'),
   }));
-  if (files.length === 0) return 'skill-gen: 生成された skill はありませんでした';
+  if (files.length === 0) return 'skill-gen: no skill was generated';
 
   const rationaleFile = path.join(outputDir, 'rationale.md');
   const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
@@ -257,7 +267,7 @@ async function skillGen(
        VALUES('skill', ?, ?, '', ?, ?, ?, 'pending', ?, datetime('now'))`,
     )
     .run(payload.machine_id, targetPath, JSON.stringify({ files }), diff, rationale, payload.job_id ?? null);
-  return `skill-gen: 提案#${Number(r.lastInsertRowid)}（${files.length} ファイル, cost=$${res.costUsd ?? 0}）`;
+  return `skill-gen: created proposal#${Number(r.lastInsertRowid)} (${files.length} files, cost=$${res.costUsd ?? 0})`;
 }
 
 async function refactorScope(
@@ -267,7 +277,7 @@ async function refactorScope(
   outputDir: string,
 ): Promise<string> {
   const db = getDb();
-  if (!payload.machine_id) throw new Error('refactor-scope: machine_id が必要です');
+  if (!payload.machine_id) throw new Error('refactor-scope: machine_id is required');
 
   const globalSnap = db
     .prepare(
@@ -298,16 +308,20 @@ async function refactorScope(
   }
   fs.writeFileSync(path.join(inputDir, 'index.json'), JSON.stringify(index, null, 2));
 
-  if (Object.keys(index).length === 0) throw new Error('refactor-scope: 対象の CLAUDE.md がありません');
+  if (Object.keys(index).length === 0) throw new Error('refactor-scope: no target CLAUDE.md found');
 
-  const res = await runClaude(template('refactor-scope'), { cwd: jobDir, maxTurns: 40 });
-  if (!res.ok) throw new Error(`refactor-scope 失敗: ${res.error}`);
+  const res = await runClaude(template('refactor-scope'), {
+    cwd: jobDir,
+    maxTurns: 40,
+    model: payload.model,
+  });
+  if (!res.ok) throw new Error(`refactor-scope failed: ${res.error}`);
 
   const rationaleFile = path.join(outputDir, 'rationale.md');
   const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
   const filesDir = path.join(outputDir, 'files');
   const outFiles = walkFiles(filesDir);
-  if (outFiles.length === 0) return 'refactor-scope: 変更提案なし';
+  if (outFiles.length === 0) return 'refactor-scope: no changes proposed';
 
   let created = 0;
   for (const f of outFiles) {
@@ -334,7 +348,7 @@ async function refactorScope(
     );
     created++;
   }
-  return `refactor-scope: ${created} 件の提案を作成（cost=$${res.costUsd ?? 0}）`;
+  return `refactor-scope: created ${created} proposals (cost=$${res.costUsd ?? 0})`;
 }
 
 /** path の `/.claude/` 以降を論理キーとする（Drift 判定と一致させる）。 */
@@ -350,7 +364,7 @@ async function driftResolve(
   outputDir: string,
 ): Promise<string> {
   const db = getDb();
-  if (!payload.key) throw new Error('drift-resolve: key が必要です');
+  if (!payload.key) throw new Error('drift-resolve: key is required');
 
   const rows = db
     .prepare(
@@ -360,7 +374,7 @@ async function driftResolve(
     )
     .all() as { machine_id: number; machine: string; path: string; hash: string; content: string }[];
   const variants = rows.filter((r) => logicalKey(r.path) === payload.key);
-  if (variants.length < 2) return 'drift-resolve: 分岐している端末が 2 未満のためスキップ';
+  if (variants.length < 2) return 'drift-resolve: fewer than 2 diverged machines, skipped';
 
   const varDir = ensureDir(path.join(inputDir, 'variants'));
   for (const v of variants) fs.writeFileSync(path.join(varDir, `${v.machine}.md`), v.content ?? '');
@@ -369,11 +383,11 @@ async function driftResolve(
     `論理キー: ${payload.key}\n端末: ${variants.map((v) => v.machine).join(', ')}\n`,
   );
 
-  const res = await runClaude(template('drift-resolve'), { cwd: jobDir, maxTurns: 30 });
-  if (!res.ok) throw new Error(`drift-resolve 失敗: ${res.error}`);
+  const res = await runClaude(template('drift-resolve'), { cwd: jobDir, maxTurns: 30, model: payload.model });
+  if (!res.ok) throw new Error(`drift-resolve failed: ${res.error}`);
 
   const mergedFile = path.join(outputDir, 'merged.md');
-  if (!fs.existsSync(mergedFile)) throw new Error('drift-resolve: output/merged.md が生成されませんでした');
+  if (!fs.existsSync(mergedFile)) throw new Error('drift-resolve: output/merged.md was not generated');
   const merged = fs.readFileSync(mergedFile, 'utf8');
   const rationaleFile = path.join(outputDir, 'rationale.md');
   const rationale = fs.existsSync(rationaleFile) ? fs.readFileSync(rationaleFile, 'utf8') : '';
@@ -389,5 +403,5 @@ async function driftResolve(
     ins.run(v.machine_id, v.path, v.hash, merged, diff, rationale, payload.job_id ?? null);
     created++;
   }
-  return `drift-resolve(${payload.key}): ${created} 端末へ統合提案を作成（cost=$${res.costUsd ?? 0}）`;
+  return `drift-resolve(${payload.key}): created merge proposals for ${created} machines (cost=$${res.costUsd ?? 0})`;
 }

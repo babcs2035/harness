@@ -15,7 +15,7 @@ case "$cmd" in
     exec python3 "$HOME/.harness/apply.py" ${cmd#python3 \~/.harness/apply.py}
     ;;
   *)
-    echo "harness gate: 許可されていないコマンドです: $cmd" >&2
+    echo "harness gate: command not allowed: $cmd" >&2
     exit 1
     ;;
 esac

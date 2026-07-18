@@ -15,7 +15,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const prop = db.prepare('SELECT id, status FROM proposals WHERE id=?').get(proposalId) as
     | { id: number; status: string }
     | undefined;
-  if (!prop) return NextResponse.json({ error: 'proposal が存在しません' }, { status: 404 });
+  if (!prop) return NextResponse.json({ error: 'proposal not found' }, { status: 404 });
 
   const now = new Date().toISOString();
   // 編集して Accept の場合は new_content を上書き保存

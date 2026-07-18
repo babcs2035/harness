@@ -11,6 +11,6 @@ export async function runSetup(payload: { machine_id: number }): Promise<string>
   const machine = db.prepare('SELECT * FROM machines WHERE id=?').get(payload.machine_id) as
     | Machine
     | undefined;
-  if (!machine) throw new Error(`machine#${payload.machine_id} が存在しません`);
+  if (!machine) throw new Error(`machine#${payload.machine_id} not found`);
   return runRemoteSetup(machine);
 }

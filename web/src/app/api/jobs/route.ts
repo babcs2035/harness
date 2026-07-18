@@ -27,7 +27,7 @@ export function GET(req: Request) {
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { type, payload } = body ?? {};
-  if (!type) return NextResponse.json({ error: 'type は必須です' }, { status: 400 });
+  if (!type) return NextResponse.json({ error: 'type is required' }, { status: 400 });
   const db = getDb();
   const r = db
     .prepare("INSERT INTO jobs(type, payload, status, created_at) VALUES(?, ?, 'queued', datetime('now'))")

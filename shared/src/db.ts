@@ -12,7 +12,7 @@ function schemaSql(): string {
 
 function dbPath(): string {
   const p = process.env.DB_PATH;
-  if (!p) throw new Error('DB_PATH が未設定です（.env / mise env を確認）');
+  if (!p) throw new Error('DB_PATH is not set (check .env / mise env)');
   return p;
 }
 

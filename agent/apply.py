@@ -82,12 +82,12 @@ def do_apply(req: dict) -> dict:
             shutil.rmtree(backup_dir, ignore_errors=True)
             return {
                 "ok": False,
-                "error": f"base_hash 不一致（提案生成後に変更された可能性）: current={cur} base={base_hash}",
+                "error": f"base_hash mismatch (may have been changed after proposal generation): current={cur} base={base_hash}",
             }
     elif base_hash:
         # 対象が消えている（base_hash 指定ありなのに無い）→ 競合扱い
         shutil.rmtree(backup_dir, ignore_errors=True)
-        return {"ok": False, "error": "対象ファイルが存在しません（base_hash 指定あり）"}
+        return {"ok": False, "error": "target file does not exist (base_hash was specified)"}
 
     _backup_one(target_path, backup_dir, manifest)
     _write_manifest(backup_dir, manifest)
@@ -116,7 +116,7 @@ def do_rollback(backup_dir: str) -> dict:
     backup_dir = os.path.abspath(os.path.expanduser(backup_dir))
     mpath = os.path.join(backup_dir, "manifest.json")
     if not os.path.isfile(mpath):
-        return {"ok": False, "error": f"manifest.json がありません: {backup_dir}"}
+        return {"ok": False, "error": f"manifest.json not found: {backup_dir}"}
     with open(mpath, encoding="utf-8") as f:
         manifest = json.load(f)
     restored = []

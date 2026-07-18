@@ -1,13 +1,4 @@
-:root {
-  --bg: #0e1116;
-  --panel: #161b22;
-  --border: #30363d;
-  --fg: #e6edf3;
-  --muted: #8b949e;
-  --accent: #4493f8;
-  color-scheme: dark;
-}
-
+/* harness — Ant Design 用の最小レイアウトスタイル */
 * {
   box-sizing: border-box;
 }
@@ -16,8 +7,8 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
-  color: var(--fg);
+  background: #0e1116;
+  color: #e6edf3;
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP",
     sans-serif;
@@ -31,34 +22,45 @@ a {
 
 .layout {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
-.sidebar {
-  width: 200px;
-  flex: 0 0 200px;
-  border-right: 1px solid var(--border);
-  padding: 20px 12px;
-  background: var(--panel);
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.sidebar h1 {
+.header .logo {
   font-size: 15px;
-  margin: 0 0 20px 8px;
+  margin: 0;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  gap: 2px;
+  flex: 1;
 }
 
 .nav a {
   display: block;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 6px;
-  color: var(--muted);
-  margin-bottom: 2px;
+  color: #8b949e;
 }
 
 .nav a:hover {
   background: rgba(255, 255, 255, 0.05);
-  color: var(--fg);
+  color: #e6edf3;
 }
 
 .content {
@@ -67,161 +69,125 @@ a {
   overflow-x: auto;
 }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
+/* Ant Design Table の分岐行ハイライト */
+.diverged {
+  background: rgba(210, 153, 34, 0.08);
 }
 
-h2 {
-  font-size: 20px;
-  margin: 0 0 18px;
+/* Ant Design のダークテーマ用上書き（ConfigProvider で十分だが、一部は CSS で補完） */
+.ant-card {
+  background: #161b22;
+  border-color: #30363d;
 }
 
-h3 {
-  font-size: 14px;
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-weight: 600;
+.ant-table {
+  color: #e6edf3;
 }
 
-.grid {
-  display: grid;
-  gap: 16px;
-}
-
-.stat-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.stat {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px;
-}
-
-.stat .label {
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-
-.stat .value {
-  font-size: 22px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-
-th {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-td.num,
-th.num {
-  text-align: right;
-}
-
-button,
-.btn {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-button.secondary {
+.ant-table-thead > tr > th {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--fg);
+  color: #8b949e;
+  border-bottom: 1px solid #30363d;
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
 }
 
-input,
-select,
-textarea {
-  background: var(--bg);
-  border: 1px solid var(--border);
+.ant-table-tbody > tr:hover > td {
+  background: #1c2128;
+}
+
+.ant-input,
+.ant-select-selector,
+.ant-picker-input input {
+  background: #0e1116;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.ant-input::placeholder,
+.ant-picker-input input::placeholder {
+  color: #8b949e;
+}
+
+.ant-modal-content {
+  background: #161b22;
+  color: #e6edf3;
+}
+
+.ant-modal-header {
+  background: #161b22;
+}
+
+.ant-modal-close {
+  color: #8b949e;
+}
+
+.ant-modal-close:hover {
+  color: #e6edf3;
+}
+
+.ant-select-dropdown {
+  background: #161b22;
+}
+
+.ant-select-item {
+  color: #e6edf3;
+}
+
+.ant-select-item-option-selected {
+  background: rgba(68, 147, 248, 0.15);
+}
+
+.ant-badge-count {
+  box-shadow: 0 0 0 1px #161b22;
+}
+
+.ant-spin-container {
+  color: #e6edf3;
+}
+
+.ant-tabs-tab {
+  color: #8b949e;
+}
+
+.ant-tabs-tab-active {
+  color: #e6edf3;
+}
+
+.ant-tabs-ink-bar {
+  background: #4493f8;
+}
+
+.ant-tabs-content {
+  color: #e6edf3;
+}
+
+.ant-tabs-tabpane {
+  color: #e6edf3;
+}
+
+/* Form styles for machines page */
+form.stack label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+form.stack input {
+  background: #0e1116;
+  border: 1px solid #30363d;
   border-radius: 6px;
-  color: var(--fg);
+  color: #e6edf3;
   padding: 7px 10px;
   font-size: 13px;
   font-family: inherit;
 }
 
-.toolbar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
-}
-
-.badge {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  border: 1px solid var(--border);
-}
-
-.badge.warn {
-  background: rgba(210, 153, 34, 0.15);
-  border-color: #d29922;
-  color: #e3b341;
-}
-
-.badge.err {
-  background: rgba(248, 81, 73, 0.15);
-  border-color: #f85149;
-  color: #ff7b72;
-}
-
-.badge.ok {
-  background: rgba(63, 185, 80, 0.15);
-  border-color: #3fb950;
-  color: #56d364;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-form.stack {
-  display: grid;
-  gap: 10px;
-  max-width: 420px;
-}
-
-form.stack label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
+/* Table number alignment */
+.num {
+  text-align: right;
 }

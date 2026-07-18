@@ -8,6 +8,8 @@ import { runCollect } from './jobs/collect.js';
 import { runSetup } from './jobs/setup.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
+/** ジョブが zombie（running 状態のまま長時間経過）とみなす秒数。デフォルト 1 時間。 */
+const ZOMBIE_THRESHOLD_S = Number(process.env.WORKER_ZOMBIE_THRESHOLD_S || 3600);
 
 interface JobRow {
   id: number;
@@ -44,51 +46,72 @@ async function dispatch(job: JobRow): Promise<string> {
     case 'cleanup':
       return runCleanup();
     default:
-      throw new Error(`未対応のジョブ種別: ${job.type}`);
+      throw new Error(`unsupported job type: ${job.type}`);
   }
 }
 
 async function runOne(db: ReturnType<typeof getDb>): Promise<boolean> {
+  // queued のジョブがない場合、zombie（running 状態が長時間継続）を再実行対象に含める
   const job = db
-    .prepare("SELECT id, type, payload FROM jobs WHERE status='queued' ORDER BY id LIMIT 1")
+    .prepare(
+      `SELECT id, type, payload FROM jobs
+       WHERE status='queued'
+       ORDER BY id LIMIT 1`,
+    )
     .get() as JobRow | undefined;
-  if (!job) return false;
+
+  if (!job) {
+    // zombie ジョブを検出: started_at が ZOMBIE_THRESHOLD_S 秒より前の running ジョブ
+    const cutoff = new Date(Date.now() - ZOMBIE_THRESHOLD_S * 1000).toISOString();
+    const zombie = db
+      .prepare(
+        `SELECT id, type, payload FROM jobs
+         WHERE status='running' AND started_at < ?
+         ORDER BY id LIMIT 1`,
+      )
+      .get(cutoff) as JobRow | undefined;
+    if (zombie) {
+      console.log(`[worker] zombie job#${zombie.id} detected, resetting to queued`);
+      db.prepare("UPDATE jobs SET status='queued', started_at=NULL WHERE id=?").run(zombie.id);
+    }
+    return false;
+  }
 
   db.prepare("UPDATE jobs SET status='running', started_at=datetime('now') WHERE id=?").run(job.id);
-  console.log(`[worker] job#${job.id} ${job.type} 開始`);
+  console.log(`[worker] job#${job.id} ${job.type} started`);
   try {
     const log = await dispatch(job);
     db.prepare("UPDATE jobs SET status='done', finished_at=datetime('now'), log=? WHERE id=?").run(
       log,
       job.id,
     );
-    console.log(`[worker] job#${job.id} 完了: ${log}`);
+    console.log(`[worker] job#${job.id} done: ${log}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const kind = classifyError(msg);
     db.prepare(
       "UPDATE jobs SET status='failed', finished_at=datetime('now'), log=?, error_kind=?, acknowledged=0 WHERE id=?",
     ).run(msg, kind, job.id);
-    console.error(`[worker] job#${job.id} 失敗 (${kind}): ${msg}`);
+    console.error(`[worker] job#${job.id} failed (${kind}): ${msg}`);
   }
   return true;
 }
 
 async function main(): Promise<void> {
   const db = getDb();
-  console.log('[worker] 起動。jobs をポーリングします');
+  console.log('[worker] started, polling jobs');
   for (;;) {
     let worked = false;
     try {
       worked = await runOne(db);
     } catch (err) {
-      console.error('[worker] ループエラー', err);
+      console.error('[worker] loop error', err);
     }
     if (!worked) await sleep(POLL_INTERVAL_MS);
   }
 }
 
 main().catch((err) => {
-  console.error('[worker] 致命的エラー', err);
+  console.error('[worker] fatal error', err);
   process.exit(1);
 });

@@ -20,6 +20,8 @@ export interface ClaudeRunOptions {
   /** JSON 成果物を強制する JSON Schema（指定時 structured_output に検証済みデータが入る） */
   jsonSchema?: object;
   timeoutMs?: number;
+  /** 使用モデル（--model にそのまま渡す。省略時は claude CLI の既定モデル） */
+  model?: string;
 }
 
 export interface ClaudeRunResult {
@@ -55,6 +57,9 @@ export function runClaude(prompt: string, opts: ClaudeRunOptions): Promise<Claud
   if (opts.jsonSchema) {
     args.push('--json-schema', JSON.stringify(opts.jsonSchema));
   }
+  if (opts.model) {
+    args.push('--model', opts.model);
+  }
 
   // CLAUDE_CONFIG_DIR は docker-compose / 環境で /data/claude-config に固定済み
   const env = { ...process.env };
@@ -69,7 +74,7 @@ export function runClaude(prompt: string, opts: ClaudeRunOptions): Promise<Claud
     child.stderr.on('data', (d) => err.push(d));
     child.on('error', (e) => {
       clearTimeout(timer);
-      resolve({ ok: false, result: '', error: `claude 起動失敗: ${e.message}` });
+      resolve({ ok: false, result: '', error: `failed to launch claude: ${e.message}` });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -79,7 +84,7 @@ export function runClaude(prompt: string, opts: ClaudeRunOptions): Promise<Claud
         resolve({
           ok: false,
           result: '',
-          error: `claude 異常終了(code=${code}): stderr=${stderr.slice(0, 400)} stdout=${stdout.slice(0, 400)}`,
+          error: `claude exited abnormally (code=${code}): stderr=${stderr.slice(0, 400)} stdout=${stdout.slice(0, 400)}`,
         });
         return;
       }
@@ -104,7 +109,11 @@ export function runClaude(prompt: string, opts: ClaudeRunOptions): Promise<Claud
           structuredOutput: j.structured_output,
         });
       } catch {
-        resolve({ ok: false, result: '', error: `claude 出力の JSON パース失敗: ${stdout.slice(0, 300)}` });
+        resolve({
+          ok: false,
+          result: '',
+          error: `failed to parse claude output as JSON: ${stdout.slice(0, 300)}`,
+        });
       }
     });
   });

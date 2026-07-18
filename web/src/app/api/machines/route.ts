@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { name, ssh_host, ssh_user, workspace_root, max_depth } = body ?? {};
   if (!name || !ssh_host || !ssh_user) {
-    return NextResponse.json({ error: 'name / ssh_host / ssh_user は必須です' }, { status: 400 });
+    return NextResponse.json({ error: 'name / ssh_host / ssh_user are required' }, { status: 400 });
   }
   const db = getDb();
   try {

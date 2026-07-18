@@ -76,12 +76,12 @@ export async function runRemoteCollector(
     res = await runProcess('ssh', [...sshBaseArgs(machine), remoteCmd], stdin);
   }
   if (res.code !== 0) {
-    throw new Error(`collector 実行失敗 (code=${res.code}): ${res.stderr.slice(0, 500)}`);
+    throw new Error(`collector run failed (code=${res.code}): ${res.stderr.slice(0, 500)}`);
   }
   try {
     return JSON.parse(res.stdout) as Increment;
   } catch {
-    throw new Error(`collector 出力の JSON パース失敗: ${res.stdout.slice(0, 300)}`);
+    throw new Error(`failed to parse collector output as JSON: ${res.stdout.slice(0, 300)}`);
   }
 }
 
@@ -95,12 +95,12 @@ export async function runRemoteApply(machine: Machine, input: ApplyInput): Promi
     res = await runProcess('ssh', [...sshBaseArgs(machine), 'python3 ~/.harness/apply.py'], stdin);
   }
   if (res.code !== 0) {
-    return { ok: false, error: `apply 実行失敗 (code=${res.code}): ${res.stderr.slice(0, 500)}` };
+    return { ok: false, error: `apply run failed (code=${res.code}): ${res.stderr.slice(0, 500)}` };
   }
   try {
     return JSON.parse(res.stdout) as ApplyResult;
   } catch {
-    return { ok: false, error: `apply 出力の JSON パース失敗: ${res.stdout.slice(0, 300)}` };
+    return { ok: false, error: `failed to parse apply output as JSON: ${res.stdout.slice(0, 300)}` };
   }
 }
 
@@ -110,19 +110,21 @@ export async function runRemoteRollback(machine: Machine, backupPath: string): P
   if (isLocal(machine)) {
     res = await runProcess('python3', [path.join(AGENT_DIR, 'apply.py'), '--rollback', backupPath], '');
   } else {
+    // backupPath はコード生成（timestamp_proposalId）のため単一引用で囲むだけで安全。
+    // 環境変数経由で渡すのは SSH 文字列补間が複雑になるため、引用で対応。
     res = await runProcess(
       'ssh',
-      [...sshBaseArgs(machine), `python3 ~/.harness/apply.py --rollback ${backupPath}`],
+      [...sshBaseArgs(machine), `python3 ~/.harness/apply.py --rollback '${backupPath}'`],
       '',
     );
   }
   if (res.code !== 0) {
-    return { ok: false, error: `rollback 失敗 (code=${res.code}): ${res.stderr.slice(0, 500)}` };
+    return { ok: false, error: `rollback failed (code=${res.code}): ${res.stderr.slice(0, 500)}` };
   }
   try {
     return JSON.parse(res.stdout) as ApplyResult;
   } catch {
-    return { ok: true, backup_path: backupPath };
+    return { ok: false, error: `failed to parse rollback output as JSON: ${res.stdout.slice(0, 300)}` };
   }
 }
 
@@ -134,7 +136,7 @@ import json, os, time
 p = os.path.expanduser("~/.claude/settings.json")
 days = int(os.environ.get("CLEANUP_DAYS", "90"))
 if days <= 0:
-    raise SystemExit("cleanupPeriodDays に 0 以下は指定禁止です")
+    raise SystemExit("cleanupPeriodDays must be greater than 0")
 data = {}
 if os.path.isfile(p):
     with open(p, encoding="utf-8") as f:
@@ -148,7 +150,7 @@ data["cleanupPeriodDays"] = days
 os.makedirs(os.path.dirname(p), exist_ok=True)
 with open(p, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
-print("settings.json 更新完了: cleanupPeriodDays =", days)
+print("settings.json updated: cleanupPeriodDays =", days)
 `;
 
 /**
@@ -158,13 +160,13 @@ print("settings.json 更新完了: cleanupPeriodDays =", days)
  */
 export async function runRemoteSetup(machine: Machine): Promise<string> {
   if (isLocal(machine)) {
-    return `machine#${machine.id}(${machine.name}) は Hub 自身のため setup 不要`;
+    return `machine#${machine.id}(${machine.name}) is Hub itself, setup skipped`;
   }
   const target = `${machine.ssh_user}@${machine.ssh_host}`;
 
   const mkdirRes = await runProcess('ssh', [...sshBaseArgs(machine), 'mkdir -p ~/.harness ~/.claude'], '');
   if (mkdirRes.code !== 0) {
-    throw new Error(`~/.harness 作成失敗 (code=${mkdirRes.code}): ${mkdirRes.stderr.slice(0, 500)}`);
+    throw new Error(`failed to create ~/.harness (code=${mkdirRes.code}): ${mkdirRes.stderr.slice(0, 500)}`);
   }
 
   const scpRes = await runProcess(
@@ -180,13 +182,13 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
   );
   if (scpRes.code !== 0) {
     throw new Error(
-      `collector.py/apply.py/gate.sh の配布失敗 (code=${scpRes.code}): ${scpRes.stderr.slice(0, 500)}`,
+      `failed to distribute collector.py/apply.py/gate.sh (code=${scpRes.code}): ${scpRes.stderr.slice(0, 500)}`,
     );
   }
 
   const chmodRes = await runProcess('ssh', [...sshBaseArgs(machine), 'chmod +x ~/.harness/gate.sh'], '');
   if (chmodRes.code !== 0) {
-    throw new Error(`gate.sh の実行権限付与失敗 (code=${chmodRes.code}): ${chmodRes.stderr.slice(0, 500)}`);
+    throw new Error(`failed to chmod +x gate.sh (code=${chmodRes.code}): ${chmodRes.stderr.slice(0, 500)}`);
   }
 
   const cleanupDays = process.env.CLEANUP_PERIOD_DAYS || '90';
@@ -196,8 +198,10 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
     SETTINGS_MERGE_SCRIPT,
   );
   if (mergeRes.code !== 0) {
-    throw new Error(`settings.json 更新失敗 (code=${mergeRes.code}): ${mergeRes.stderr.slice(0, 500)}`);
+    throw new Error(
+      `failed to update settings.json (code=${mergeRes.code}): ${mergeRes.stderr.slice(0, 500)}`,
+    );
   }
 
-  return `machine#${machine.id}(${machine.name}) へ collector.py/apply.py/gate.sh を配布し ${mergeRes.stdout.trim()}`;
+  return `distributed collector.py/apply.py/gate.sh to machine#${machine.id}(${machine.name}); ${mergeRes.stdout.trim()}`;
 }

@@ -81,7 +81,7 @@ export default function HistoryPage() {
     },
     { title: '端末', dataIndex: 'machine', key: 'machine' },
     {
-      title: '適用',
+      title: '適用日時',
       dataIndex: 'applied_at',
       key: 'applied_at',
       render: (v) => <Text type="secondary">{shortTime(v)}</Text>,

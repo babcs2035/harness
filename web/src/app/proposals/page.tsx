@@ -83,22 +83,25 @@ export default function ProposalsPage() {
   const [selKind, setSelKind] = useState(ANALYZE_KINDS[0]?.key ?? '');
   const [selModel, setSelModel] = useState(MODELS[0]?.key ?? '');
   const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<number, string | undefined>>({});
 
   const reload = useCallback(() => {
     api<{ proposals: Proposal[] }>('/api/proposals?status=pending')
       .then((d) => setProposals(d.proposals))
-      .catch((e) => setMsg(`エラー: ${e.message ?? e}`));
+      .catch((e) => setError(`エラー: ${e.message ?? e}`));
     api<{ patterns: Pattern[] }>('/api/patterns')
       .then((d) => setPatterns(d.patterns))
       .catch(() => setPatterns([]));
   }, []);
   useEffect(() => {
     reload();
-    api<{ machines: Machine[] }>('/api/machines').then((d) => {
-      setMachines(d.machines);
-      if (d.machines[0]) setSelMachine(d.machines[0].id);
-    });
+    api<{ machines: Machine[] }>('/api/machines')
+      .then((d) => {
+        setMachines(d.machines);
+        if (d.machines[0]) setSelMachine(d.machines[0].id);
+      })
+      .catch((e) => setError(`エラー: ${e.message ?? e}`));
   }, [reload]);
 
   async function analyze() {
@@ -204,6 +207,20 @@ export default function ProposalsPage() {
           {msg}
         </div>
       )}
+      {error && (
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 16,
+            background: 'rgba(248,81,73,0.15)',
+            border: '1px solid #f85149',
+            borderRadius: 6,
+            color: '#ff7b72',
+          }}
+        >
+          読み込みエラー: {error}
+        </div>
+      )}
 
       {patterns.length > 0 && (
         <Card style={{ marginBottom: 16 }}>
@@ -292,6 +309,8 @@ export default function ProposalsPage() {
               style={{
                 width: '100%',
                 minHeight: 320,
+                maxHeight: 480,
+                overflowY: 'auto',
                 fontFamily: 'monospace',
                 background: '#0e1116',
                 color: '#e6edf3',

@@ -6,6 +6,7 @@ import { runApply, runRollback } from './jobs/apply.js';
 import { runCleanup } from './jobs/cleanup.js';
 import { runCollect } from './jobs/collect.js';
 import { runSetup } from './jobs/setup.js';
+import { shutdown } from './ssh.js';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 3000);
 /** ジョブが zombie（running 状態のまま長時間経過）とみなす秒数。デフォルト 1 時間。 */
@@ -24,9 +25,10 @@ function sleep(ms: number): Promise<void> {
 /** エラーメッセージから再試行可能性の種別を粗く分類する（ダッシュボード表示・運用判断用）。 */
 export function classifyError(message: string): string {
   const m = message.toLowerCase();
-  if (/(unauthor|forbidden|permission|auth|token|login)/.test(m)) return 'auth';
-  if (/(rate.?limit|429|quota|usage limit)/.test(m)) return 'rate_limit';
-  if (/(timeout|econnrefused|enetunreach|temporar|connection|reset)/.test(m)) return 'transient';
+  // より具体的なパターンを先にチェック（"rate limit exceeded: unauthorized" 等の複合エラー対策）
+  if (/(rate.?limit|429|quota|usage.?limit)/.test(m)) return 'rate_limit';
+  if (/(unauthorized|forbidden|permission.?denied|invalid.?token|login.?fail)/.test(m)) return 'auth';
+  if (/(timeout|econnrefused|enetunreach|connection.?reset|temporary.?failure)/.test(m)) return 'transient';
   return 'fatal';
 }
 
@@ -98,6 +100,9 @@ async function runOne(db: ReturnType<typeof getDb>): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  // グローバルシグナルハンドラ: SIGTERM/SIGINT で子プロセスを一括 kill 後終了
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
   const db = getDb();
   console.log('[worker] started, polling jobs');
   for (;;) {

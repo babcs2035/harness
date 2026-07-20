@@ -48,11 +48,26 @@ export default function DriftPage() {
     }
   }
 
+  const HASH_COLORS = [
+    '#4493f8',
+    '#3fb950',
+    '#d29922',
+    '#8957e5',
+    '#db61a2',
+    '#39c5cf',
+    '#f85149',
+    '#79c0ff',
+    '#56d364',
+    '#e3b341',
+    '#bc8cff',
+    '#f778ba',
+  ];
+
   const hashColor = (h: string | undefined) => {
     if (!h) return '#8b949e';
     let n = 0;
-    for (const c of h) n = (n + c.charCodeAt(0)) % 6;
-    return ['#4493f8', '#3fb950', '#d29922', '#8957e5', '#db61a2', '#39c5cf'][n];
+    for (const c of h) n = (n + c.charCodeAt(0)) % HASH_COLORS.length;
+    return HASH_COLORS[n];
   };
 
   const columns: ColumnsType<KeyRow> = [
@@ -119,7 +134,7 @@ export default function DriftPage() {
         </div>
       )}
 
-      <Spin spinning={!keys.length && !msg}>
+      <Spin spinning={!keys.length && !msg} size="large">
         <Card>
           <Table<KeyRow>
             dataSource={keys}

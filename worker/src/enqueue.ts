@@ -24,12 +24,13 @@ function main(): void {
       id: number;
       name: string;
     }[];
-    // worker は直列実行。この投入順で「当日の収集を反映した提案」になる:
-    //   全機 collect → 全機 digest-fold → 全機 CLAUDE.md 改善提案 → cleanup
-    for (const m of machines) enqueue('collect', { machine_id: m.id });
-    for (const m of machines) enqueue('analyze', { kind: 'digest-fold', scope: 'global', machine_id: m.id });
-    for (const m of machines)
+    // worker は直列実行。各機ごとに collect → digest-fold → claude-md-improve を実行:
+    //   全機 collect を待たずに digest-fold を開始できるため、全体の実行時間が短縮される。
+    for (const m of machines) {
+      enqueue('collect', { machine_id: m.id });
+      enqueue('analyze', { kind: 'digest-fold', scope: 'global', machine_id: m.id });
       enqueue('analyze', { kind: 'claude-md-improve', scope: 'global', machine_id: m.id });
+    }
     enqueue('cleanup', {});
     console.log(
       `daily: enqueued collect/digest-fold/claude-md-improve for ${machines.length} machines, plus cleanup`,

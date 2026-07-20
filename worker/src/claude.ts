@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 
 /**
  * Hub 上で `claude -p`（headless・Claude Code サブスク認証）を実行するランナー。
@@ -64,8 +65,11 @@ export function runClaude(prompt: string, opts: ClaudeRunOptions): Promise<Claud
   // CLAUDE_CONFIG_DIR は docker-compose / 環境で /data/claude-config に固定済み
   const env = { ...process.env };
 
+  // cwd は絶対パスであること（相対パスでの実行を防ぐ）
+  const cwd = path.isAbsolute(opts.cwd) ? opts.cwd : path.resolve(opts.cwd);
+
   return new Promise((resolve) => {
-    const child = spawn('claude', args, { cwd: opts.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('claude', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     const timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs ?? 10 * 60_000);

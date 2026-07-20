@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Col, DatePicker, Row, Select, Space, Statistic, Typography } from 'antd';
+import { Card, Col, DatePicker, Row, Segmented, Statistic, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   Bar,
@@ -18,7 +18,7 @@ import {
 import { api } from '@/lib/api';
 import { comma, compact } from '@/lib/format';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 interface Daily {
   date: string;
@@ -46,6 +46,7 @@ const RANGES = [
   { key: '7d', label: '直近 7 日', days: 7 },
   { key: '30d', label: '直近 30 日', days: 30 },
   { key: 'all', label: '全期間', days: 0 },
+  { key: 'custom', label: '期間を指定', days: 0 },
 ];
 
 const COLORS = {
@@ -76,7 +77,7 @@ export default function OverviewPage() {
     if (isCustom) {
       if (customFrom) qs.set('from', customFrom);
       if (customTo) qs.set('to', customTo);
-    } else {
+    } else if (range !== 'custom') {
       const days = RANGES.find((r) => r.key === range)?.days ?? 30;
       const from = fromDate(days);
       if (from) qs.set('from', from);
@@ -101,29 +102,32 @@ export default function OverviewPage() {
         Overview
       </Title>
 
-      <Space wrap style={{ marginBottom: 16 }}>
-        {RANGES.map((r) => (
-          <Select
-            key={r.key}
-            value={r.key === range && !isCustom ? r.key : undefined}
-            onChange={() => selectRange(r.key)}
-            style={{ width: 120 }}
-            options={[{ value: r.key, label: r.label }]}
-          />
-        ))}
-        <Text style={{ color: '#8b949e' }}>または期間指定:</Text>
-        <DatePicker
-          value={customFrom ? new Date(customFrom) : null}
-          onChange={(d) => setCustomFrom(d?.toISOString().slice(0, 10) ?? '')}
-          format="YYYY-MM-DD"
-        />
-        <Text style={{ color: '#8b949e' }}>〜</Text>
-        <DatePicker
-          value={customTo ? new Date(customTo) : null}
-          onChange={(d) => setCustomTo(d?.toISOString().slice(0, 10) ?? '')}
-          format="YYYY-MM-DD"
-        />
-      </Space>
+      <Segmented
+        value={isCustom ? 'custom' : range}
+        onChange={(v) => {
+          if (v === 'custom') {
+            return;
+          }
+          selectRange(v as string);
+        }}
+        options={RANGES.map((r) => ({ label: r.label, value: r.key }))}
+        style={{ marginBottom: 16 }}
+      />
+      <DatePicker.RangePicker
+        onChange={(dates) => {
+          if (!dates?.[0] || !dates[1]) {
+            setRange('30d');
+            setCustomFrom('');
+            setCustomTo('');
+            return;
+          }
+          setRange('');
+          setCustomFrom(dates[0].format('YYYY-MM-DD'));
+          setCustomTo(dates[1].format('YYYY-MM-DD'));
+        }}
+        format="YYYY-MM-DD"
+        style={{ marginBottom: 16 }}
+      />
 
       {error && (
         <div

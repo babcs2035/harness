@@ -1,6 +1,6 @@
-// client 側 fetch は絶対パス '/api/...' に basePath が自動付与されないため、明示的に前置する。
-// next.config.js の basePath と一致させること。
-export const BASE = '/harness';
+// basePath は next.config.js の env でビルド時に埋め込まれる。
+// basePath 未設定時は ''、設定時は '/harness' としてビルドされる。
+export const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

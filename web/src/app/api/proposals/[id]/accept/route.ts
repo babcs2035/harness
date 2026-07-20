@@ -22,7 +22,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (typeof editedContent === 'string' && editedContent.length > 0) {
     db.prepare('UPDATE proposals SET new_content=? WHERE id=?').run(editedContent, proposalId);
   }
-  db.prepare("UPDATE proposals SET status='accepted', decided_at=? WHERE id=?").run(now, proposalId);
+  // 同時実行で重複 accept を防止: status='pending' のみ更新
+  const updateResult = db
+    .prepare("UPDATE proposals SET status='accepted', decided_at=? WHERE id=? AND status='pending'")
+    .run(now, proposalId);
+  if (updateResult.changes === 0) {
+    return NextResponse.json({ error: 'proposal was already accepted or rejected' }, { status: 409 });
+  }
   const r = db
     .prepare(
       "INSERT INTO jobs(type, payload, status, created_at) VALUES('apply', ?, 'queued', datetime('now'))",

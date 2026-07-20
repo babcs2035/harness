@@ -10,6 +10,10 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, '..'),
   // better-sqlite3（ネイティブ addon）を webpack バンドルから除外
   serverExternalPackages: ['better-sqlite3'],
+  // basePath をビルド時に埋め込み（クライアント側 fetch 用）
+  env: {
+    NEXT_PUBLIC_BASE_PATH: '/harness',
+  },
 };
 
 module.exports = nextConfig;

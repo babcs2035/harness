@@ -5,7 +5,7 @@
   - files 指定時は skill 一式など複数ファイルをまとめて適用する
     files = [{"rel_path": "<target_path 起点の相対パス>", "content": "..."}]
 - 適用前に対象の現ハッシュと base_hash を照合し、不一致なら中止（提案生成後の手編集を保護）。
-- バックアップ → 同一 FS の一時ファイル + os.replace() でアトミックに置換。
+- バックアップ → 同一 FS の一時ファイル + os.replace() でアトミック置換。
 - `--rollback <backup_dir>`: manifest に従い復元する。
 
 依存は Python 3.8+ 標準ライブラリのみ。
@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -40,13 +41,20 @@ def backups_root() -> str:
 
 def atomic_write(path: str, content: str) -> str:
     """同一ディレクトリの一時ファイルに書いて os.replace でアトミック置換。適用後ハッシュを返す。"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    target_dir = os.path.dirname(path) or "."
+    os.makedirs(target_dir, exist_ok=True)
     tmp = f"{path}.harness.tmp.{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+    # ディレクトリエントリも同期（ジャーナリングされない FS でのデータ消失防止）
+    try:
+        with os.open(target_dir, os.O_RDONLY) as dir_fd:
+            os.fsync(dir_fd)
+    except OSError:
+        pass  # ディレクトリ開けない場合は無視
     return sha256_file(path)
 
 
@@ -65,6 +73,13 @@ def do_apply(req: dict) -> dict:
         base = target_path
         for item in files:
             dest = os.path.abspath(os.path.join(base, item["rel_path"]))
+            # ディレクトリトラバーサル保護: base の親ディレクトリ外に出ないかチェック
+            if not dest.startswith(os.path.abspath(os.path.expanduser(base)) + os.sep) and dest != os.path.abspath(os.path.expanduser(base)):
+                shutil.rmtree(backup_dir, ignore_errors=True)
+                return {
+                    "ok": False,
+                    "error": f"directory traversal detected in rel_path: {item['rel_path']}",
+                }
             _backup_one(dest, backup_dir, manifest)
         _write_manifest(backup_dir, manifest)
         applied = []
@@ -112,6 +127,15 @@ def _write_manifest(backup_dir: str, manifest: list) -> None:
         json.dump(manifest, f, ensure_ascii=False)
 
 
+def _fsync_parent(path: str) -> None:
+    """ファイルの親ディレクトリを fsync してジャーナリングを確実化する。"""
+    try:
+        with os.open(os.path.dirname(path), os.O_RDONLY) as dir_fd:
+            os.fsync(dir_fd)
+    except OSError:
+        pass
+
+
 def do_rollback(backup_dir: str) -> dict:
     backup_dir = os.path.abspath(os.path.expanduser(backup_dir))
     mpath = os.path.join(backup_dir, "manifest.json")
@@ -128,11 +152,13 @@ def do_rollback(backup_dir: str) -> dict:
             tmp = f"{orig}.harness.tmp.{os.getpid()}"
             shutil.copy2(backup, tmp)
             os.replace(tmp, orig)
+            _fsync_parent(orig)
             restored.append(orig)
         elif backup is None:
             # 新規作成だったファイルは削除して元の「存在しない」状態へ戻す
             if os.path.isfile(orig):
                 os.remove(orig)
+                _fsync_parent(orig)
             restored.append(f"-{orig}")
     return {"ok": True, "backup_path": backup_dir, "restored": restored}
 
@@ -142,9 +168,19 @@ def main() -> None:
     ap.add_argument("--rollback", metavar="BACKUP_DIR", help="バックアップから復元")
     args = ap.parse_args()
 
+    rollback_path = args.rollback
+    # SSH 経由で base64 環境変数からパスを受け取る場合（shell injection 回避）
+    env_path = os.environ.get("HARNESS_ROLLBACK_PATH", "")
+    if env_path and not rollback_path:
+        try:
+            rollback_path = base64.b64decode(env_path).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            sys.stdout.write(json.dumps({"ok": False, "error": "invalid HARNESS_ROLLBACK_PATH encoding"}))
+            return
+
     try:
-        if args.rollback:
-            result = do_rollback(args.rollback)
+        if rollback_path:
+            result = do_rollback(rollback_path)
         else:
             raw = sys.stdin.read()
             req = json.loads(raw)

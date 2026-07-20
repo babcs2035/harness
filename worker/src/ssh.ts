@@ -1,7 +1,19 @@
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import path from 'node:path';
 import type { ApplyInput, ApplyResult, CollectorInput, Increment } from '@harness/shared';
 import { AGENT_DIR } from './lib/paths.js';
+
+// runProcess で spawn された子プロセスのリスト。シグナル受信時に一括 kill する。
+const _children: ChildProcess[] = [];
+
+/** 登録された全ての子プロセスにシグナルを送信し、graceful shutdown を行う。 */
+export function shutdown(): void {
+  for (const child of _children) {
+    if (!child.killed) child.kill('SIGTERM');
+  }
+  // 5 秒後に強制終了
+  setTimeout(() => process.exit(1), 5000).unref();
+}
 
 export interface Machine {
   id: number;
@@ -35,16 +47,23 @@ interface SpawnResult {
   stderr: string;
 }
 
-/** stdin を渡してコマンドを実行し、stdout/stderr をストリームで集める。 */
+/**
+ * stdin を渡してコマンドを実行し、stdout/stderr をストリームで集める。
+ * シグナルハンドラ (index.ts) が SIGTERM/SIGINT を受け取った際、子プロセスを一括 kill する。
+ */
 function runProcess(cmd: string, args: string[], stdin: string): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    _children.push(child);
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout.on('data', (d) => out.push(d));
     child.stderr.on('data', (d) => err.push(d));
     child.on('error', reject);
     child.on('close', (code) => {
+      // 終了したらリストから削除（O(n)だが同時実行数は1のため実問題ない）
+      const i = _children.indexOf(child);
+      if (i >= 0) _children.splice(i, 1);
       resolve({
         code: code ?? -1,
         stdout: Buffer.concat(out).toString('utf8'),
@@ -110,11 +129,15 @@ export async function runRemoteRollback(machine: Machine, backupPath: string): P
   if (isLocal(machine)) {
     res = await runProcess('python3', [path.join(AGENT_DIR, 'apply.py'), '--rollback', backupPath], '');
   } else {
-    // backupPath はコード生成（timestamp_proposalId）のため単一引用で囲むだけで安全。
-    // 環境変数経由で渡すのは SSH 文字列补間が複雑になるため、引用で対応。
+    // backupPath を base64 環境変数経由で渡す（shell injection 完全回避）。
+    // 単一引用で囲み、base64 文字列内の特殊文字を shell から保護。
+    const envBackup = Buffer.from(backupPath).toString('base64');
     res = await runProcess(
       'ssh',
-      [...sshBaseArgs(machine), `python3 ~/.harness/apply.py --rollback '${backupPath}'`],
+      [
+        ...sshBaseArgs(machine),
+        `HARNESS_ROLLBACK_PATH='${envBackup}' python3 ~/.harness/apply.py --rollback`,
+      ],
       '',
     );
   }
@@ -124,34 +147,9 @@ export async function runRemoteRollback(machine: Machine, backupPath: string): P
   try {
     return JSON.parse(res.stdout) as ApplyResult;
   } catch {
-    return { ok: false, error: `failed to parse rollback output as JSON: ${res.stdout.slice(0, 300)}` };
+    return { ok: false, error: `failed to parse apply output as JSON: ${res.stdout.slice(0, 300)}` };
   }
 }
-
-// deploy/setup-machine.sh の settings.json マージ処理と同一のロジック。
-// authorized_keys への鍵登録はここでは行わない（HARNESS_SSH_KEY は既に各開発機に
-// 登録済みの前提で運用しているため）。
-const SETTINGS_MERGE_SCRIPT = `
-import json, os, time
-p = os.path.expanduser("~/.claude/settings.json")
-days = int(os.environ.get("CLEANUP_DAYS", "90"))
-if days <= 0:
-    raise SystemExit("cleanupPeriodDays must be greater than 0")
-data = {}
-if os.path.isfile(p):
-    with open(p, encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except ValueError:
-            data = {}
-    with open(p + f".harness.bak.{int(time.time())}", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-data["cleanupPeriodDays"] = days
-os.makedirs(os.path.dirname(p), exist_ok=True)
-with open(p, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-print("settings.json updated: cleanupPeriodDays =", days)
-`;
 
 /**
  * 開発機に collector.py / apply.py / gate.sh を配布し、settings.json の
@@ -164,7 +162,11 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
   }
   const target = `${machine.ssh_user}@${machine.ssh_host}`;
 
-  const mkdirRes = await runProcess('ssh', [...sshBaseArgs(machine), 'mkdir -p ~/.harness ~/.claude'], '');
+  const mkdirRes = await runProcess(
+    'ssh',
+    [...sshBaseArgs(machine), 'mkdir -p ~/.harness ~/.claude ~/.ssh'],
+    '',
+  );
   if (mkdirRes.code !== 0) {
     throw new Error(`failed to create ~/.harness (code=${mkdirRes.code}): ${mkdirRes.stderr.slice(0, 500)}`);
   }
@@ -176,13 +178,14 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
       path.join(AGENT_DIR, 'collector.py'),
       path.join(AGENT_DIR, 'apply.py'),
       path.join(AGENT_DIR, 'gate.sh'),
+      path.join(AGENT_DIR, 'settings-merge.py'),
       `${target}:~/.harness/`,
     ],
     '',
   );
   if (scpRes.code !== 0) {
     throw new Error(
-      `failed to distribute collector.py/apply.py/gate.sh (code=${scpRes.code}): ${scpRes.stderr.slice(0, 500)}`,
+      `failed to distribute collector.py/apply.py/gate.sh/settings-merge.py (code=${scpRes.code}): ${scpRes.stderr.slice(0, 500)}`,
     );
   }
 
@@ -191,11 +194,12 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
     throw new Error(`failed to chmod +x gate.sh (code=${chmodRes.code}): ${chmodRes.stderr.slice(0, 500)}`);
   }
 
+  // settings-merge.py を SSH 経由で実行（環境変数 CLEANUP_DAYS で日数を指定）
   const cleanupDays = process.env.CLEANUP_PERIOD_DAYS || '90';
   const mergeRes = await runProcess(
     'ssh',
-    [...sshBaseArgs(machine), `CLEANUP_DAYS=${cleanupDays} python3 -`],
-    SETTINGS_MERGE_SCRIPT,
+    [...sshBaseArgs(machine), `CLEANUP_DAYS=${cleanupDays} python3 ~/.harness/settings-merge.py`],
+    '',
   );
   if (mergeRes.code !== 0) {
     throw new Error(
@@ -203,5 +207,5 @@ export async function runRemoteSetup(machine: Machine): Promise<string> {
     );
   }
 
-  return `distributed collector.py/apply.py/gate.sh to machine#${machine.id}(${machine.name}); ${mergeRes.stdout.trim()}`;
+  return `distributed collector.py/apply.py/gate.sh/settings-merge.py to machine#${machine.id}(${machine.name}); ${mergeRes.stdout.trim()}`;
 }

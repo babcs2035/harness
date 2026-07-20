@@ -199,37 +199,46 @@ export default function MachinesPage() {
           {editingId ? `端末#${editingId} を編集` : '端末を追加'}
         </Title>
         <form className="stack" onSubmit={submitForm}>
-          <label>
+          <label htmlFor="machine-name">
             名前
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <input
+              id="machine-name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+            />
           </label>
-          <label>
+          <label htmlFor="machine-ssh-host">
             SSH ホスト（Hub 自身なら local）
             <input
+              id="machine-ssh-host"
               value={form.ssh_host}
               onChange={(e) => setForm({ ...form, ssh_host: e.target.value })}
               required
             />
           </label>
-          <label>
+          <label htmlFor="machine-ssh-user">
             SSH ユーザー
             <input
+              id="machine-ssh-user"
               value={form.ssh_user}
               onChange={(e) => setForm({ ...form, ssh_user: e.target.value })}
               required
             />
           </label>
-          <label>
+          <label htmlFor="machine-workspace-root">
             workspace ルート（省略時 ~/workspace）
             <input
+              id="machine-workspace-root"
               value={form.workspace_root}
               onChange={(e) => setForm({ ...form, workspace_root: e.target.value })}
               placeholder="/home/user/workspace"
             />
           </label>
-          <label>
+          <label htmlFor="machine-max-depth">
             走査深度（省略時 6）
             <input
+              id="machine-max-depth"
               type="number"
               value={form.max_depth}
               onChange={(e) => setForm({ ...form, max_depth: e.target.value })}

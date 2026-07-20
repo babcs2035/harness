@@ -20,6 +20,9 @@ export function ingestIncrement(
 ): IngestSummary {
   const db = getDb();
   const now = new Date().toISOString();
+  /** Tier1 増分の TTL 猶予日数（既定 7 日） */
+  const graceDays = Number(process.env.TIER1_GRACE_DAYS || 7);
+  const deleteAfter = new Date(Date.now() + graceDays * 86_400_000).toISOString();
 
   const upsertProject = db.prepare(
     `INSERT INTO projects(machine_id, cwd, last_seen_at) VALUES(?, ?, ?)
@@ -53,7 +56,7 @@ export function ingestIncrement(
      ON CONFLICT(session_id) DO UPDATE SET
        last_at = MAX(sessions.last_at, excluded.last_at),
        started_at = MIN(sessions.started_at, excluded.started_at),
-       message_count = sessions.message_count + excluded.message_count,
+       message_count = MAX(sessions.message_count, excluded.message_count),
        project_id = excluded.project_id`,
   );
 
@@ -76,7 +79,7 @@ export function ingestIncrement(
   );
 
   const insertTier1 = db.prepare(
-    `INSERT INTO tier1_increments(machine_id, project_id, file_path, collected_at) VALUES(?, ?, ?, ?)`,
+    `INSERT INTO tier1_increments(machine_id, project_id, file_path, collected_at, delete_after) VALUES(?, ?, ?, ?, ?)`,
   );
   const touchMachine = db.prepare(`UPDATE machines SET last_collected_at=? WHERE id=?`);
 
@@ -125,7 +128,7 @@ export function ingestIncrement(
 
     // 素材（発話等）は増分ファイルごと Tier1 として索引（Phase 2 の分析で消費）
     if (increment.sessions.length > 0) {
-      insertTier1.run(machineId, null, incrementFilePath, now);
+      insertTier1.run(machineId, null, incrementFilePath, now, deleteAfter);
     }
 
     for (const c of increment.new_cursors) {

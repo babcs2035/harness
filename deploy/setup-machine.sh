@@ -14,9 +14,9 @@ CLEANUP_DAYS="${CLEANUP_PERIOD_DAYS:-90}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT_DIR="$SCRIPT_DIR/agent"
 
-echo "==> creating ~/.harness and distributing collector/apply/gate"
+echo "==> creating ~/.harness and distributing collector/apply/gate/settings-merge"
 ssh "$TARGET" 'mkdir -p ~/.harness ~/.claude ~/.ssh && chmod 700 ~/.ssh'
-scp "$AGENT_DIR/collector.py" "$AGENT_DIR/apply.py" "$AGENT_DIR/gate.sh" "$TARGET:~/.harness/"
+scp "$AGENT_DIR/collector.py" "$AGENT_DIR/apply.py" "$AGENT_DIR/gate.sh" "$AGENT_DIR/settings-merge.py" "$TARGET:~/.harness/"
 ssh "$TARGET" 'chmod +x ~/.harness/gate.sh'
 
 if [[ -f "$PUBKEY_PATH" ]]; then
@@ -31,28 +31,7 @@ else
 fi
 
 echo "==> merging cleanupPeriodDays=$CLEANUP_DAYS into settings.json (0 forbidden, backup taken)"
-ssh "$TARGET" "CLEANUP_DAYS=$CLEANUP_DAYS python3 - " <<'PYEOF'
-import json, os, time
-p = os.path.expanduser("~/.claude/settings.json")
-days = int(os.environ.get("CLEANUP_DAYS", "90"))
-if days <= 0:
-    raise SystemExit("cleanupPeriodDays must be greater than 0")
-data = {}
-if os.path.isfile(p):
-    with open(p, encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except ValueError:
-            data = {}
-    # バックアップ
-    with open(p + f".harness.bak.{int(time.time())}", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-data["cleanupPeriodDays"] = days
-os.makedirs(os.path.dirname(p), exist_ok=True)
-with open(p, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-print("settings.json updated: cleanupPeriodDays =", days)
-PYEOF
+ssh "$TARGET" "CLEANUP_DAYS=$CLEANUP_DAYS python3 ~/.harness/settings-merge.py"
 
 echo "==> done. Register the machine from the Hub Machines screen (name / ssh_host / ssh_user)."
 echo "   Setting HARNESS_API_URL also enables automatic registration via the API (see README)."

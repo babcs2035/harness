@@ -12,6 +12,8 @@ interface ProjectRow {
   sessions: number;
   messages: number;
   last_seen_at: string | null;
+  claude_md_size: number | null;
+  claude_md_updated: string | null;
 }
 
 /** プロジェクト一覧。CLAUDE.md の有無/サイズを添え、「よく使うのに薄い」順で返す。 */
@@ -21,28 +23,31 @@ export function GET() {
     .prepare(
       `SELECT p.id, p.cwd, p.machine_id, m.name AS machine, p.last_seen_at,
         (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id) AS sessions,
-        (SELECT COALESCE(SUM(messages),0) FROM stats_daily d WHERE d.project_id=p.id) AS messages
-       FROM projects p JOIN machines m ON m.id=p.machine_id`,
+        (SELECT COALESCE(SUM(messages),0) FROM stats_daily d WHERE d.project_id=p.id) AS messages,
+        LENGTH(s.content) AS claude_md_size,
+        s.collected_at AS claude_md_updated
+       FROM projects p
+       JOIN machines m ON m.id=p.machine_id
+       LEFT JOIN snapshots s ON s.machine_id=p.machine_id AND s.kind='claude_md' AND s.is_current=1
+         AND s.path = p.cwd || '/CLAUDE.md'`,
     )
     .all() as ProjectRow[];
 
-  const claudeMd = db.prepare(
-    `SELECT LENGTH(content) AS size, collected_at FROM snapshots
-     WHERE machine_id=? AND kind='claude_md' AND is_current=1 AND path=?`,
-  );
-
   const projects = rows.map((p) => {
-    const md = claudeMd.get(p.machine_id, `${p.cwd}/CLAUDE.md`) as
-      | { size: number; collected_at: string }
-      | undefined;
-    const size = md?.size ?? 0;
+    const size = p.claude_md_size ?? 0;
     // 薄さスコア: 利用量(messages)が多く CLAUDE.md が薄いほど大きい
     const thinness = p.messages / (size + 200);
     return {
-      ...p,
-      has_claude_md: !!md,
+      id: p.id,
+      cwd: p.cwd,
+      machine_id: p.machine_id,
+      machine: p.machine,
+      sessions: p.sessions,
+      messages: p.messages,
+      last_seen_at: p.last_seen_at,
+      has_claude_md: (p.claude_md_size ?? 0) > 0,
       claude_md_size: size,
-      claude_md_updated: md?.collected_at ?? null,
+      claude_md_updated: p.claude_md_updated,
       thinness,
     };
   });

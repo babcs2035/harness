@@ -8,7 +8,7 @@ export function GET(req: Request) {
   const db = getDb();
   const url = new URL(req.url);
   const status = url.searchParams.get('status');
-  const limit = Number(url.searchParams.get('limit') || 50);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 500);
 
   const jobs = status
     ? db.prepare('SELECT * FROM jobs WHERE status=? ORDER BY id DESC LIMIT ?').all(status, limit)
@@ -28,6 +28,11 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { type, payload } = body ?? {};
   if (!type) return NextResponse.json({ error: 'type is required' }, { status: 400 });
+  // 許可されたジョブ種別のみ受付（将来の種別追加時はここも更新すること）
+  const KNOWN_TYPES = ['setup', 'collect', 'analyze', 'apply', 'rollback', 'cleanup'] as const;
+  if (!(type in KNOWN_TYPES)) {
+    return NextResponse.json({ error: `unknown job type: ${type}` }, { status: 400 });
+  }
   const db = getDb();
   const r = db
     .prepare("INSERT INTO jobs(type, payload, status, created_at) VALUES(?, ?, 'queued', datetime('now'))")

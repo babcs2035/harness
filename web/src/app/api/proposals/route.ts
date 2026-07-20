@@ -9,22 +9,30 @@ export function GET(req: Request) {
   const db = getDb();
   const url = new URL(req.url);
   const status = url.searchParams.get('status');
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 100), 1), 500);
 
-  const rows = (
+  const proposals = (
     status
-      ? db.prepare('SELECT * FROM proposals WHERE status=? ORDER BY id DESC').all(status)
-      : db.prepare('SELECT * FROM proposals ORDER BY id DESC').all()
+      ? db
+          .prepare(
+            `SELECT p.*, m.name AS machine, s.content AS old_content
+             FROM proposals p
+             LEFT JOIN machines m ON m.id = p.machine_id
+             LEFT JOIN snapshots s ON s.machine_id = p.machine_id AND s.path = p.target_path AND s.is_current = 1
+             WHERE p.status = ?
+             ORDER BY p.id DESC LIMIT ?`,
+          )
+          .all(status, limit)
+      : db
+          .prepare(
+            `SELECT p.*, m.name AS machine, s.content AS old_content
+             FROM proposals p
+             LEFT JOIN machines m ON m.id = p.machine_id
+             LEFT JOIN snapshots s ON s.machine_id = p.machine_id AND s.path = p.target_path AND s.is_current = 1
+             ORDER BY p.id DESC LIMIT ?`,
+          )
+          .all(limit)
   ) as Record<string, unknown>[];
 
-  const machineName = db.prepare('SELECT name FROM machines WHERE id=?');
-  const currentSnap = db.prepare(
-    'SELECT content FROM snapshots WHERE machine_id=? AND path=? AND is_current=1',
-  );
-
-  const proposals = rows.map((p) => {
-    const m = machineName.get(p.machine_id) as { name: string } | undefined;
-    const snap = currentSnap.get(p.machine_id, p.target_path) as { content: string } | undefined;
-    return { ...p, machine: m?.name ?? '', old_content: snap?.content ?? '' };
-  });
   return NextResponse.json({ proposals });
 }

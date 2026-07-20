@@ -13,8 +13,10 @@ import { ingestIncrement } from './ingest.js';
  */
 export async function runCollect(machineId: number, opts: { fullResync?: boolean } = {}): Promise<string> {
   const db = getDb();
-  const machine = db.prepare('SELECT * FROM machines WHERE id=?').get(machineId) as Machine | undefined;
-  if (!machine) throw new Error(`machine#${machineId} not found`);
+  const machine = db.prepare('SELECT * FROM machines WHERE id=? AND enabled=1').get(machineId) as
+    | Machine
+    | undefined;
+  if (!machine) throw new Error(`machine#${machineId} not found or disabled`);
 
   const cursors = db
     .prepare('SELECT file_path AS file, byte_offset, head_hash FROM cursors WHERE machine_id=?')

@@ -94,8 +94,8 @@ def process_jsonl_files(projects_dir, cursors_by_file, full_resync, recent_full_
             if cur:
                 offset = int(cur.get("byte_offset", 0))
                 prev_head = cur.get("head_hash")
-                # ローテーション/改変検知: サイズ縮小 or 先頭ハッシュ不一致なら全読み直し
-                rotated = size < offset
+                # ローテーション/改変検知: サイズ縮小 or 先頭ハッシュ不一致 or 0 バイト化なら全読み直し
+                rotated = size < offset or size == 0
                 if not rotated and prev_head is not None:
                     try:
                         if head_hash_of(path) != prev_head:
@@ -104,23 +104,26 @@ def process_jsonl_files(projects_dir, cursors_by_file, full_resync, recent_full_
                         rotated = True
                 start = 0 if rotated else offset
 
-            _parse_file(path, start, stats, sessions)
+            # JSONL の親ディレクトリ名を cwd フォールバック用に渡す
+            _parse_file(path, start, stats, sessions, root)
 
             # 新カーソル: 読み終えた末尾位置とその時点の先頭ハッシュ
-            try:
-                new_cursors[path] = {
-                    "file": path,
-                    "byte_offset": size,
-                    "head_hash": head_hash_of(path) if size > 0 else "",
-                }
-            except OSError:
-                pass
+            # 0 バイトファイルはカーソル更新をスキップ（無限ループ防止）
+            if size > 0:
+                try:
+                    new_cursors[path] = {
+                        "file": path,
+                        "byte_offset": size,
+                        "head_hash": head_hash_of(path),
+                    }
+                except OSError:
+                    pass
 
     _mark_recent_full(sessions, recent_full_n)
     return stats, sessions, new_cursors
 
 
-def _parse_file(path, start, stats, sessions):
+def _parse_file(path, start, stats, sessions, file_dir=None):
     try:
         with open(path, "rb") as f:
             f.seek(start)
@@ -131,12 +134,12 @@ def _parse_file(path, start, stats, sessions):
                     continue
                 if not isinstance(obj, dict):
                     continue
-                _consume_entry(obj, stats, sessions)
+                _consume_entry(obj, stats, sessions, file_dir)
     except OSError:
         return
 
 
-def _consume_entry(obj, stats, sessions):
+def _consume_entry(obj, stats, sessions, file_dir=None):
     etype = obj.get("type")
     if etype not in ("user", "assistant"):
         return  # agent-setting / mode / file-history-snapshot 等はスキップ
@@ -145,7 +148,7 @@ def _consume_entry(obj, stats, sessions):
     if not isinstance(msg, dict):
         return
 
-    cwd = obj.get("cwd") or _cwd_from_dir(obj)
+    cwd = obj.get("cwd") or (_cwd_from_dir(file_dir) if file_dir else "")
     ts = obj.get("timestamp") or ""
     sid = obj.get("sessionId") or obj.get("session_id")
 
@@ -197,8 +200,20 @@ def _consume_entry(obj, stats, sessions):
                 sessions[sid].setdefault("_assistant_raw", []).append(text)
 
 
-def _cwd_from_dir(obj):
-    """cwd 欠落行のフォールバック: projects/ のエンコード名から復元（曖昧なので最後の手段）。"""
+def _cwd_from_dir(file_dir):
+    """cwd 欠落行のフォールバック: JSONL ファイルの親ディレクトリ名から cwd を復元。
+
+    ~/.claude/projects/<machine>-<cwd_encoded>/**/*.jsonl の構造で、
+    projects/ の直下のディレクトリ名がエンコード済み cwd である。
+    ただしデコードは曖昧（パス中の - と区別できない）ため最後の手段。
+    """
+    if not file_dir:
+        return ""
+    # 親ディレクトリが projects/ 配下かチェック
+    parent = os.path.basename(file_dir)
+    grandparent = os.path.basename(os.path.dirname(file_dir))
+    if grandparent == "projects":
+        return parent
     return ""
 
 
@@ -313,11 +328,15 @@ def collect_snapshots(claude_dir, workspace_root, max_depth, snapshot_hashes):
 
 
 # ── 環境サマリ ──────────────────────────────────────────────────────
-def env_summary(claude_dir):
+def env_summary(claude_dir, projects_dir):
+    """環境サマリを返す。projects_dir は process_jsonl_files で既に走査済みなので除外。"""
     total = 0
     session_files = 0
-    projects_dir = os.path.join(claude_dir, "projects")
     for root, dirs, files in os.walk(claude_dir):
+        # 既に process_jsonl_files で走査済みの projects_dir を除外
+        if root == projects_dir or root.startswith(projects_dir + os.sep):
+            dirs[:] = []
+            continue
         dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
         for name in files:
             fp = os.path.join(root, name)
@@ -325,7 +344,7 @@ def env_summary(claude_dir):
                 total += os.path.getsize(fp)
             except OSError:
                 pass
-            if name.endswith(".jsonl") and root.startswith(projects_dir):
+            if name.endswith(".jsonl") and root.startswith(projects_dir + os.sep):
                 session_files += 1
     return {"claude_dir_bytes": total, "session_file_count": session_files}
 
@@ -384,7 +403,7 @@ def main():
         "new_cursors": list(new_cursors.values()),
         "changed_snapshots": changed_snapshots,
         "deleted_files": deleted_files,
-        "env": env_summary(claude_dir),
+        "env": env_summary(claude_dir, projects_dir),
     }
 
     payload = json.dumps(increment, ensure_ascii=False)

@@ -1,4 +1,4 @@
-import { getDb } from '@harness/shared';
+import { getDb, logicalKey } from '@harness/shared';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -10,12 +10,6 @@ interface Snap {
   kind: string;
   path: string;
   hash: string;
-}
-
-/** `/.claude/` 以降を論理キーとして端末横断で揃え、同一キーの hash が分岐していれば drift。 */
-function logicalKey(p: string): string {
-  const i = p.indexOf('/.claude/');
-  return i >= 0 ? p.slice(i + 1) : p;
 }
 
 export function GET() {
